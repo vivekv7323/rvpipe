@@ -1,0 +1,316 @@
+import os
+import numpy as np
+from astropy.io import fits
+from numpy.core.multiarray import interp
+#from PyAstronomy import pyasl
+import matplotlib.pyplot as plt
+#from timeit import default_timer as timer
+from scipy import stats
+from scipy.signal import find_peaks
+from scipy.interpolate import CubicSpline
+from scipy.optimize import curve_fit
+from scipy.ndimage import maximum_filter1d
+from tqdm import tqdm
+
+def fetch_single(path):
+        # define the fits extensions
+        fib = 'SCI' # SCIENCE fiber
+        fits_extension_spectrum = fib + 'FLUX' # this is how we catalog the different bits of NEID data
+        fits_extension_variance = fib + 'VAR' # variance (noise) extension of fits file
+        fits_extension_wavelength = fib + 'WAVE' # wavelength solution extension
+        fits_extension_blaze = fib + 'BLAZE' # wavelength solution extension
+        # primary header
+        header = fits.open(path)[0].header
+        # global properties of the spectrum
+        berv  = header['SSBRV052'] * 1000 # m/s
+        #drift = header['DRIFTRV0'] # m/s
+
+        # the actual spectrum (in flux units)
+        data_spec = fits.getdata(path, fits_extension_spectrum)[9:-5,:]
+        # the actual blaze (in flux units)
+        blz_spec = fits.getdata(path, fits_extension_blaze)[9:-5,:]
+        # the variance of the spectrum
+        # var = fits.getdata(path, fits_extension_variance)[9:-5,:]
+        var = np.ones_like(data_spec)
+        var[data_spec>0] = np.sqrt(data_spec[data_spec>0])
+        # the wavelength solution of the spectrum (natively in Angstroms)
+        wsol = fits.getdata(path, fits_extension_wavelength)[9:-5,:] # A
+        # Shift to heliocentric frame
+        c    = 299792458 # m/s
+        wsol = wsol + wsol * berv / c
+        # manually filter bad columns
+        data_spec[:,434:451]   = 0
+        data_spec[:,1930:1945] = 0
+        # filter for orders with douplicates in x
+        wsol      = list(wsol)[:109]      + list(wsol)[111:]
+        data_spec = list(data_spec)[:109] + list(data_spec)[111:]
+        var       = list(var)[:109]       + list(var)[111:]
+        blz_spec  = list(blz_spec)[:109]  + list(blz_spec)[111:]
+        # filter for nan (by creating pseduo orders)
+        X = []; Y = []; E = []
+        for x,y,e,b in zip(wsol,data_spec,var,blz_spec):
+            b[~np.isfinite(y)] = 1
+            b[~np.isfinite(b)] = 1
+            b[b==0] = 1
+            y[~np.isfinite(y)] = np.nan
+            y[y<=0] = np.nan
+            y[~np.isfinite(b)] = np.nan
+            e[~np.isfinite(e)] = np.nan
+            e[e<0] = np.nan
+            X.append( x ); Y.append( y/b ); E.append( np.sqrt(e)/b )
+
+        ''' 
+        wavelength = X[0];flux = Y[0];error = E[0]
+        for i in range(len(X)-1):
+            # indices without overlap
+            num1 = np.where(wavelength < (wavelength[-1]+X[i+1][0])/2)
+            num2 = np.where(X[i+1] > (wavelength[-1]+X[i+1][0])/2)
+
+            # concatenate with main array
+            wavelength = np.concatenate((wavelength[num1],X[i+1][num2]))
+            flux = np.concatenate((flux[num1], Y[i+1][num2]))
+            error = np.concatenate((error[num1], E[i+1][num2]))
+            
+        num3 = np.where((wavelength>3900) & (wavelength<5850))
+        return wavelength[num3], flux[num3], error[num3], berv
+        '''
+
+        # convert to numpy arrays
+        X = np.array(X)
+        Y = np.array(Y)
+        E = np.array(E)
+        return X, Y, E, berv
+
+# creates reference spectrum from files in path, and a wavelength reference
+def createRefSpectrum(path, reference):
+
+        # directory for all files
+        files = os.listdir(path)
+
+        # get reference file
+        waveRef,flux,error,berv = fetch_single(reference)
+
+        # get NEID measurements for reference
+        neidrvRef = fits.open(reference)[12].header['CCFRVMOD']*1000
+        #waveRef += waveRef * neidrvRef/299792458
+
+        # initialize array for reference spectrum
+        refSpectrum = np.zeros(np.shape(waveRef))
+
+        # integrate fluxes for all files after interpolating them to the same wavelength array
+        for file in tqdm(files, desc="integrating reference"):
+                
+            wavelength, flux, error, berv = fetch_single(path + '/' + file)
+
+            neidrv = fits.open(path + '/' + file)[12].header['CCFRVMOD']*1000
+            #wavelength += wavelength * neidrv/299792458
+            
+            refSpectrum += np.concatenate([interp(waveRef[[i]],wavelength[i],flux[i]) for i in range(np.shape(flux)[0])])
+
+        return waveRef, refSpectrum/len(files)
+
+def loadRefSpectrum(path, startA, endA):
+       
+        # Load reference spectrum
+        result = np.load(path)
+        wavelength = result["arr_0"]
+        flux = result["arr_1"]
+
+        bigMask = (wavelength<0)
+        for i in tqdm(range(len(startA)), desc="constructing telluric mask"):
+            bigMask |= ((wavelength>startA[i])&(wavelength<endA[i]))
+
+        #cSplines = list([]) for i in range(np.shape(flux)[0])])
+
+        '''
+        Get local minima for absorption lines, get cubic spline model,       
+        get local maxima to set windows for each line 
+        '''
+        minima = []
+        maxima = []
+        cSplines = []
+        for i in range(np.shape(flux)[0]):
+            flux[i] = flux[i]/maximum_filter1d(np.where(np.isnan(flux[i]),-np.inf, flux[i]), size=2000)
+            cSplines.append(CubicSpline(wavelength[i][np.isfinite(flux[i])], flux[i][np.isfinite(flux[i])]))
+            maxima.append(find_peaks(flux[i], distance=1,height=.02, prominence=.02)[0])
+            minList = find_peaks(np.nanmax(flux[i])-flux[i], distance=5,height=.1, prominence=.1)[0]
+            minima.append(minList[np.isin(minList, np.where(bigMask[i] == False)[0])])
+
+        contDiff = []
+##        lineDepth = []
+##        massCenter = []
+##        smallWindow = []
+##        jerkDistance = []
+##        bisector = []
+##        numMaxima = []
+        indicesList = []
+
+        # create line windows
+        for i in tqdm(range(len(minima)),desc="creating line windows"):
+                
+                #, massCenterOrd, swOrd, jDOrd, bisectorOrd, numMaximaOrd, lineDepthOrd\
+                contDiffOrd = np.zeros(len(minima[i]))#,np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
+                   #np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
+                indicesOrd = []
+                
+                for j in range(len(minima[i])):
+
+                        # get local maxima surrounding line
+                        nearestMaxIndex = np.argmin(np.abs(maxima[i] - minima[i][j]))
+                        if (wavelength[i][maxima[i][nearestMaxIndex]] >  wavelength[i][minima[i][j]]) & (nearestMaxIndex != 0):
+                            otherMaxOrd = flux[i][maxima[i][nearestMaxIndex - 1]]
+                        elif (wavelength[i][maxima[i][nearestMaxIndex]] <  wavelength[i][minima[i][j]]) & (nearestMaxIndex != (len(maxima[i])-1)):
+                            otherMaxOrd = flux[i][maxima[i][nearestMaxIndex + 1]]
+                        else:
+                            otherMaxOrd = np.nan
+
+                        # difference between maxima
+                        contDiffOrd[j] = np.abs(otherMaxOrd - flux[i][maxima[i][nearestMaxIndex]])
+
+                        # box around window
+                        box = np.abs(wavelength[i][maxima[i][nearestMaxIndex]] - wavelength[i][minima[i][j]])
+
+                        # Get location of line peak
+                        lineMin = wavelength[i][minima[i][j]]
+
+                        # indices of the window 
+                        indicesOrd.append(np.where((wavelength[i] < (box+lineMin)) & (wavelength[i] > (lineMin-box))))
+
+                contDiff.append(contDiffOrd)
+                indicesList.append(indicesOrd)
+
+        return wavelength, flux, cSplines, minima, contDiff, indicesList, bigMask
+
+# create arrays with telluric line groups ot mask out
+def createTelluricArrays(telPath, wvlPath):
+
+        y = fits.open(telPath)[0].data        
+        x = fits.open(wvlPath)[0].data * 10 # angstrom
+
+        # smooth out a bit to get rid of continuum
+        y = y/maximum_filter1d(y, size=2)
+        mask = np.where((np.abs(y-1) > 1e-10))[0]
+
+        # create groups
+        start = x[mask[np.where(np.diff(mask) != 1)]]
+        end = x[mask[np.where(np.diff(mask) != 1)[0]+1]]
+        start = np.insert(start, len(start), x[mask[-1]])
+        end = np.insert(end, 0, x[mask[0]])    
+
+        return start,end
+
+def singleFileRV(path, wavelength, flux, cSplines, minima, indicesList):
+
+        # Currently working on single file, looping all files later
+        wS, fS, eS, bervS = fetch_single(path)
+
+        # Interpolate flux and error
+        fS = np.concatenate([interp(wavelength[[i]],wS[i],fS[i]) for i in range(np.shape(fS)[0])])
+        eS = np.concatenate([interp(wavelength[[i]],wS[i],eS[i]) for i in range(np.shape(eS)[0])])
+
+        try: 
+                # get Ca II H/K wavelengths        
+                CaK = wS[10][minima[10][(wS[10][minima[10]] > 3967) & (wS[10][minima[10]] < 3971)]][0]
+                CaH = wS[8][minima[8][(wS[8][minima[8]] > 3934) & (wS[8][minima[8]] < 3936)]][0]
+
+                # Calculate s-index
+                CaHflux1 = np.nansum(fS[8][(wS[8] < (CaH+0.545)) & (wS[8] > (CaH-0.545))])
+                CaHflux2 = np.nansum(fS[9][(wS[9] < (CaH+0.545)) & (wS[9] > (CaH-0.545))])
+                CaKflux1 = np.nansum(fS[10][(wS[10] < (CaK+0.545)) & (wS[10] > (CaK-0.545))])
+                CaKflux2 = np.nansum(fS[9][(wS[9] < (CaK+0.545)) & (wS[9] > (CaK-0.545))])
+                flux3900 = (CaHflux2/CaHflux1)*np.nansum(fS[8][(wS[8] < (3910)) & (wS[8] > (3890))])
+                flux4000 =(CaKflux2/CaKflux1)* np.nansum(fS[10][(wS[10] < (4010)) & (wS[10] > (3990))])
+                Sindex = (CaHflux2+CaKflux2)/(flux3900+flux4000)
+                #RHKprime = pyasl.SMW_RHK(ccfs='noyes', afc='middelkoop', rphot='noyes').SMWtoRHK(Sindex, 5778, 0.656, lc='ms', verbose=False)[0]
+
+                # Get Mn I wavelengths
+                Mn1 = np.where((wS[50][minima[50]] > 5394) & (wS[50][minima[50]] < 5396))[0]
+                Mn2 = np.where((wS[51][minima[51]] > 5394) & (wS[51][minima[51]] < 5396))[0]
+        except:
+                raise ValueError('masking obscures critical lines')
+        
+        #print(CaH, CaK)
+        #print(wS[50][minima[50][Mn1]][0],wS[51][minima[51][Mn2]][0])
+
+        # Calculate RV, RV errors, and other parameters
+        RV = []
+        RVError = []
+        corrCoeff = []
+
+        Mnlinedepth = 0
+
+        # calculate RVs for each order
+        for i in range(len(minima)):
+                
+            # continuum subtraction
+            fluxCont = fS[i]/maximum_filter1d(np.where(np.isnan(fS[i]),-np.inf, fS[i]), size=2000)
+            # Initialize arrays
+            RVOrd, RVErrorOrd, corrCoeffOrd = np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
+
+            # iterate over lines in each order
+            for j in range(len(minima[i])):
+                        
+                indices = indicesList[i][j]
+                # minimum pixel length of window
+                if (len(indices[0]) > 10) & (len(indices[0]) < 100):
+                        # get wavelength and flux of interpolated target spectrum in the window
+                        waveLine = wavelength[i][indices]
+                        fluxSpec = fluxCont[indices]
+                        der = cSplines[i](waveLine, 1)
+                        # linear least-squares regression
+##                        covInv = np.linalg.inv(np.diag(eS[i][indices]**2))
+##                        designMatrix = np.vstack((flux[i][indices], cSplines[i](waveLine, 1)))
+                        # try/except linear regression
+                        location = ~np.isnan(flux[i][indices]) & ~np.isnan(fluxSpec)
+                        try:
+                                def model(S,A,Adl):
+                                        return A * S + Adl*der[location]
+                                bestpars,parsCov = curve_fit(model,flux[i][indices][location],\
+                                                             fluxSpec[location], sigma = eS[i][indices][location])
+
+##                                parsCov = np.linalg.inv(designMatrix @ covInv @ designMatrix.T)
+##                                bestpars = parsCov @ designMatrix @ covInv @ fluxSpec
+                                corrCoeffOrd[j] = np.sqrt(np.square(parsCov[1][0])/(parsCov[1][1]*parsCov[0][0]))
+                                RVOrd[j] = (299792458*bestpars[1]/(bestpars[0]*wavelength[i][minima[i][j]]))
+                                RVErrorOrd[j] = (299792458/wavelength[i][minima[i][j]])*np.sqrt((parsCov[1][1]/bestpars[0])**2\
+                                                                         + (parsCov[0][0]*bestpars[1]/(bestpars[0]**2))**2)
+                        except:
+                                #print(np.min(np.abs(maximum_filter1d(fS[i], size=2000))))
+                                raise ValueError('linear regression failed')
+                                            
+                        if ((i==50) & (j==Mn1)) | ((i==51)&(j==Mn2)):
+                                Mnlinedepth += np.min(fluxSpec)/np.max(fluxSpec)
+                                
+                else:
+                        RVOrd[j] = np.nan
+                        RVErrorOrd[j] = np.nan
+                        corrCoeffOrd[j] = np.nan
+                        
+            RV.append(RVOrd)
+            RVError.append(RVErrorOrd)
+            corrCoeff.append(corrCoeffOrd)
+
+        return RV, RVError, corrCoeff, Sindex, Mnlinedepth*0.5
+
+waveRef, refSpectrum = createRefSpectrum('data', 'data/neidL2_20220323T163236.fits')
+# Save reference spectrum
+np.savez("refSpectrum.npz", waveRef, refSpectrum)
+
+# directory for all files
+files = os.listdir('data')
+startA, endA = createTelluricArrays('TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits')
+wavelength, flux, cSplines, minima, contDiff, indicesList, bigMask = loadRefSpectrum("refSpectrum.npz",startA,endA)
+
+Sindices,Mndepths = np.zeros(len(files)),np.zeros(len(files))
+
+#for i in range(len(files)):
+for i in tqdm(range(len(files)), desc="Processing files"):
+        #print(files[i][:-5])
+        RV, RVError, corrCoeff, Sindex, Mnlinedepth = singleFileRV('data' + '/' + files[i], wavelength, flux, cSplines, minima, indicesList)
+        np.savez("npz"+'/'+ files[i][:-5]+"_RV", RV, RVError, corrCoeff)  
+        Sindices[i] = Sindex
+        Mndepths[i] = Mnlinedepth
+
+np.savez("contDiff", contDiff)
+np.savez("sindices", Sindices)
+np.savez("mnlinedepths", Mndepths)
