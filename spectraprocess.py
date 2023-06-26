@@ -12,6 +12,10 @@ from scipy.optimize import curve_fit
 from scipy.ndimage import maximum_filter1d
 from tqdm import tqdm
 
+
+'''
+get data from single fits file
+'''
 def fetch_single(path):
         # define the fits extensions
         fib = 'SCI' # SCIENCE fiber
@@ -81,7 +85,9 @@ def fetch_single(path):
         E = np.array(E)
         return X, Y, E, berv
 
-# creates reference spectrum from files in path, and a wavelength reference
+'''
+creates reference spectrum from files in path, and a wavelength reference
+'''
 def createRefSpectrum(path, reference):
 
         # directory for all files
@@ -109,6 +115,9 @@ def createRefSpectrum(path, reference):
 
         return waveRef, refSpectrum/len(files)
 
+'''
+load reference spectrum, create telluric mask and line windows
+'''
 def loadRefSpectrum(path, startA, endA):
        
         # Load reference spectrum
@@ -181,7 +190,9 @@ def loadRefSpectrum(path, startA, endA):
 
         return wavelength, flux, cSplines, minima, contDiff, indicesList, bigMask
 
-# create arrays with telluric line groups ot mask out
+'''
+create arrays with telluric line groups ot mask out
+'''
 def createTelluricArrays(telPath, wvlPath):
 
         y = fits.open(telPath)[0].data        
@@ -199,6 +210,9 @@ def createTelluricArrays(telPath, wvlPath):
 
         return start,end
 
+'''
+process single file
+'''
 def singleFileRV(path, wavelength, flux, cSplines, minima, indicesList):
 
         # Currently working on single file, looping all files later
