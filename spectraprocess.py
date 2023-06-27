@@ -43,12 +43,12 @@ def fetch_single(path):
         # manually filter bad columns
         data_spec[:,434:451]   = 0
         data_spec[:,1930:1945] = 0
-        # filter for orders with douplicates in x
+        # filter for orders with duplicates in x
         wsol      = list(wsol)[:109]      + list(wsol)[111:]
         data_spec = list(data_spec)[:109] + list(data_spec)[111:]
         var       = list(var)[:109]       + list(var)[111:]
         blz_spec  = list(blz_spec)[:109]  + list(blz_spec)[111:]
-        # filter for nan (by creating pseduo orders)
+        # filter for nan (by creating pseudo orders)
         X = []; Y = []; E = []
         for x,y,e,b in zip(wsol,data_spec,var,blz_spec):
             b[~np.isfinite(y)] = 1
@@ -222,13 +222,13 @@ def singleFileRV(path, wavelength, flux, cSplines, minima, indicesList):
 
         try: 
                 # get Ca II H/K wavelengths        
-                CaK = wS[10][minima[10][(wS[10][minima[10]] > 3967) & (wS[10][minima[10]] < 3971)]][0]
-                CaH = wS[8][minima[8][(wS[8][minima[8]] > 3934) & (wS[8][minima[8]] < 3936)]][0]
-
+                CaH = 3968.47
+                CaK = 3933.66
+                
                 # Calculate s-index
-                CaHflux1 = np.nansum(fS[8][(wS[8] < (CaH+0.545)) & (wS[8] > (CaH-0.545))])
+                CaHflux1 = np.nansum(fS[10][(wS[10] < (CaH+0.545)) & (wS[10] > (CaH-0.545))])
                 CaHflux2 = np.nansum(fS[9][(wS[9] < (CaH+0.545)) & (wS[9] > (CaH-0.545))])
-                CaKflux1 = np.nansum(fS[10][(wS[10] < (CaK+0.545)) & (wS[10] > (CaK-0.545))])
+                CaKflux1 = np.nansum(fS[8][(wS[8] < (CaK+0.545)) & (wS[8] > (CaK-0.545))])
                 CaKflux2 = np.nansum(fS[9][(wS[9] < (CaK+0.545)) & (wS[9] > (CaK-0.545))])
                 flux3900 = (CaHflux2/CaHflux1)*np.nansum(fS[8][(wS[8] < (3910)) & (wS[8] > (3890))])
                 flux4000 =(CaKflux2/CaKflux1)* np.nansum(fS[10][(wS[10] < (4010)) & (wS[10] > (3990))])
