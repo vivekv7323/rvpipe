@@ -12,7 +12,6 @@ from scipy.optimize import curve_fit
 from scipy.ndimage import maximum_filter1d
 from tqdm import tqdm
 
-
 '''
 get data from single fits file
 '''
@@ -39,9 +38,8 @@ def fetch_single(path):
         var[data_spec>0] = np.sqrt(data_spec[data_spec>0])
         # the wavelength solution of the spectrum (natively in Angstroms)
         wsol = fits.getdata(path, fits_extension_wavelength)[9:-5,:] # A
-        # Shift to heliocentric frame
-        c    = 299792458 # m/s
-        wsol = wsol + wsol * berv / c
+        # Shift to heliocentric frame, compensate for zero point offset
+        wsol = wsol + wsol * (berv-83285) / 299792458
         # manually filter bad columns
         data_spec[:,434:451]   = 0
         data_spec[:,1930:1945] = 0
@@ -127,7 +125,7 @@ def loadRefSpectrum(path, startA, endA):
 
         bigMask = (wavelength<0)
         for i in tqdm(range(len(startA)), desc="constructing telluric mask"):
-            bigMask |= ((wavelength>startA[i])&(wavelength<endA[i]))
+            bigMask |= ((wavelength>(startA[i]-0.4))&(wavelength<(endA[i]+0.4)))
 
         #cSplines = list([]) for i in range(np.shape(flux)[0])])
 
