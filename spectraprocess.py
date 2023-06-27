@@ -186,7 +186,7 @@ def loadRefSpectrum(path, startA, endA):
                 contDiff.append(contDiffOrd)
                 indicesList.append(indicesOrd)
 
-        return wavelength, flux, cSplines, minima, contDiff, indicesList, bigMask
+        return wavelength, flux, cSplines, minima, maxima, contDiff, indicesList, bigMask
 
 '''
 create arrays with telluric line groups ot mask out
@@ -211,7 +211,7 @@ def createTelluricArrays(telPath, wvlPath):
 '''
 process single file
 '''
-def singleFileRV(path, wavelength, flux, cSplines, minima, indicesList):
+def singleFileRV(path, wavelength, flux, cSplines, minima, maxima, indicesList):
 
         # Currently working on single file, looping all files later
         wS, fS, eS, bervS = fetch_single(path)
@@ -259,6 +259,11 @@ def singleFileRV(path, wavelength, flux, cSplines, minima, indicesList):
             # Initialize arrays
             RVOrd, RVErrorOrd, corrCoeffOrd = np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
 
+            if ((i==50) | (i==51)):
+                mnbox = np.abs(wavelength[i][maxima[i]][np.argmin(np.abs(wavelength[i][maxima[i]] - 5394.7))] - 5394.7)
+                relFlux = fluxCont[(wavelength[i] > (5394.7-mnbox)) & (wavelength[i] < (5394.7+mnbox))]
+                Mnlinedepth += np.min(relFlux)/np.max(relFlux)
+
             # iterate over lines in each order
             for j in range(len(minima[i])):
                         
@@ -289,9 +294,6 @@ def singleFileRV(path, wavelength, flux, cSplines, minima, indicesList):
                         except:
                                 #print(np.min(np.abs(maximum_filter1d(fS[i], size=2000))))
                                 raise ValueError('linear regression failed')
-                                            
-                        if ((i==50) & (j==Mn1)) | ((i==51)&(j==Mn2)):
-                                Mnlinedepth += np.min(fluxSpec)/np.max(fluxSpec)
                                 
                 else:
                         RVOrd[j] = np.nan
@@ -311,18 +313,16 @@ np.savez("refSpectrum.npz", waveRef, refSpectrum)
 # directory for all files
 files = os.listdir('data')
 startA, endA = createTelluricArrays('TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits')
-wavelength, flux, cSplines, minima, contDiff, indicesList, bigMask = loadRefSpectrum("refSpectrum.npz",startA,endA)
+wavelength, flux, cSplines, minima, maxima, contDiff, indicesList, bigMask = loadRefSpectrum("refSpectrum.npz",startA,endA)
 
 Sindices,Mndepths = np.zeros(len(files)),np.zeros(len(files))
 
 #for i in range(len(files)):
 for i in tqdm(range(len(files)), desc="Processing files"):
         #print(files[i][:-5])
-        RV, RVError, corrCoeff, Sindex, Mnlinedepth = singleFileRV('data' + '/' + files[i], wavelength, flux, cSplines, minima, indicesList)
+        RV, RVError, corrCoeff, Sindex, Mnlinedepth = singleFileRV('data' + '/' + files[i], wavelength, flux, cSplines, minima, maxima, indicesList)
         np.savez("npz"+'/'+ files[i][:-5]+"_RV", RV, RVError, corrCoeff)  
         Sindices[i] = Sindex
         Mndepths[i] = Mnlinedepth
 
-np.savez("contDiff", contDiff)
-np.savez("sindices", Sindices)
-np.savez("mnlinedepths", Mndepths)
+np.savez("otherParams", minima, contDiff, Sindices, Mndepths)
