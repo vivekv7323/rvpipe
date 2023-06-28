@@ -133,6 +133,7 @@ def loadRefSpectrum(path, startA, endA):
         Get local minima for absorption lines, get cubic spline model,       
         get local maxima to set windows for each line 
         '''
+        preTelMinima = []
         minima = []
         maxima = []
         cSplines = []
@@ -141,6 +142,7 @@ def loadRefSpectrum(path, startA, endA):
             cSplines.append(CubicSpline(wavelength[i][np.isfinite(flux[i])], flux[i][np.isfinite(flux[i])]))
             maxima.append(find_peaks(flux[i], distance=1,height=.02, prominence=.02)[0])
             minList = find_peaks(np.nanmax(flux[i])-flux[i], distance=5,height=.1, prominence=.1)[0]
+            preTelMinima.append(minList)
             minima.append(minList[np.isin(minList, np.where(bigMask[i] == False)[0])])
 
         contDiff = []
@@ -186,7 +188,7 @@ def loadRefSpectrum(path, startA, endA):
                 contDiff.append(contDiffOrd)
                 indicesList.append(indicesOrd)
 
-        return wavelength, flux, cSplines, minima, maxima, contDiff, indicesList, bigMask
+        return wavelength, flux, cSplines, minima, maxima, contDiff, indicesList, preTelMinima
 
 '''
 create arrays with telluric line groups ot mask out
@@ -313,7 +315,7 @@ np.savez("refSpectrum.npz", waveRef, refSpectrum)
 # directory for all files
 files = os.listdir('data')
 startA, endA = createTelluricArrays('TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits')
-wavelength, flux, cSplines, minima, maxima, contDiff, indicesList, bigMask = loadRefSpectrum("refSpectrum.npz",startA,endA)
+wavelength, flux, cSplines, minima, maxima, contDiff, indicesList, preTelMinima = loadRefSpectrum("refSpectrum.npz",startA,endA)
 
 Sindices,Mndepths = np.zeros(len(files)),np.zeros(len(files))
 
@@ -325,4 +327,4 @@ for i in tqdm(range(len(files)), desc="Processing files"):
         Sindices[i] = Sindex
         Mndepths[i] = Mnlinedepth
 
-np.savez("otherParams", minima, contDiff, Sindices, Mndepths)
+np.savez("otherParams", minima, contDiff, Sindices, Mndepths, preTelMinima)
