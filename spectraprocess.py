@@ -200,7 +200,7 @@ def createTelluricArrays(telPath, wvlPath):
 
         # smooth out a bit to get rid of continuum
         y = y/maximum_filter1d(y, size=2)
-        mask = np.where((np.abs(y-1) > 1e-10))[0]
+        mask = np.where((np.abs(y-1) > 1e-6))[0]
 
         # create groups
         start = x[mask[np.where(np.diff(mask) != 1)]]
@@ -250,7 +250,8 @@ def singleFileRV(path, wavelength, flux, cSplines, minima, maxima, indicesList):
         RV = []
         RVError = []
         corrCoeff = []
-
+        lineDepth = []
+        lineWidth = []
         Mnlinedepth = 0
 
         # calculate RVs for each order
@@ -259,7 +260,8 @@ def singleFileRV(path, wavelength, flux, cSplines, minima, maxima, indicesList):
             # continuum subtraction
             fluxCont = fS[i]/maximum_filter1d(np.where(np.isnan(fS[i]),-np.inf, fS[i]), size=2000)
             # Initialize arrays
-            RVOrd, RVErrorOrd, corrCoeffOrd = np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
+            RVOrd, RVErrorOrd, corrCoeffOrd, lineDepthOrd, lineWidthOrd = np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))\
+                                                                          ,np.zeros(len(minima[i])),np.zeros(len(minima[i]))
 
             if ((i==50) | (i==51)):
                 mnbox = np.abs(wavelength[i][maxima[i]][np.argmin(np.abs(wavelength[i][maxima[i]] - 5394.7))] - 5394.7)
@@ -270,12 +272,17 @@ def singleFileRV(path, wavelength, flux, cSplines, minima, maxima, indicesList):
             for j in range(len(minima[i])):
                         
                 indices = indicesList[i][j]
+                lineMin = wavelength[i][minima[i][j]]
                 # minimum pixel length of window
                 if (len(indices[0]) > 10) & (len(indices[0]) < 100):
                         # get wavelength and flux of interpolated target spectrum in the window
                         waveLine = wavelength[i][indices]
                         fluxSpec = fluxCont[indices]
                         der = cSplines[i](waveLine, 1)
+                        lineDepthOrd[j] = np.min(fluxSpec)/np.max(fluxSpec)
+                        halfMax = 0.5*(np.min(fluxSpec)+np.max(fluxSpec))
+                        lineWidthOrd[j] = np.abs(waveLine[waveLine < lineMin][np.argmin(np.abs(fluxSpec[waveLine < lineMin] - halfMax))] -\
+                                          waveLine[waveLine > lineMin][np.argmin(np.abs(fluxSpec[waveLine > lineMin] - halfMax))])
                         # linear least-squares regression
 ##                        covInv = np.linalg.inv(np.diag(eS[i][indices]**2))
 ##                        designMatrix = np.vstack((flux[i][indices], cSplines[i](waveLine, 1)))
@@ -290,8 +297,8 @@ def singleFileRV(path, wavelength, flux, cSplines, minima, maxima, indicesList):
 ##                                parsCov = np.linalg.inv(designMatrix @ covInv @ designMatrix.T)
 ##                                bestpars = parsCov @ designMatrix @ covInv @ fluxSpec
                                 corrCoeffOrd[j] = np.sqrt(np.square(parsCov[1][0])/(parsCov[1][1]*parsCov[0][0]))
-                                RVOrd[j] = (299792458*bestpars[1]/(bestpars[0]*wavelength[i][minima[i][j]]))
-                                RVErrorOrd[j] = (299792458/wavelength[i][minima[i][j]])*np.sqrt((parsCov[1][1]/bestpars[0])**2\
+                                RVOrd[j] = (299792458*bestpars[1]/(bestpars[0]*lineMin))
+                                RVErrorOrd[j] = (299792458/lineMin)*np.sqrt((parsCov[1][1]/bestpars[0])**2\
                                                                          + (parsCov[0][0]*bestpars[1]/(bestpars[0]**2))**2)
                         except:
                                 #print(np.min(np.abs(maximum_filter1d(fS[i], size=2000))))
@@ -301,12 +308,16 @@ def singleFileRV(path, wavelength, flux, cSplines, minima, maxima, indicesList):
                         RVOrd[j] = np.nan
                         RVErrorOrd[j] = np.nan
                         corrCoeffOrd[j] = np.nan
+                        lineDepthOrd[j] = np.nan
+                        lineWidthOrd[j] = np.nan
                         
             RV.append(RVOrd)
             RVError.append(RVErrorOrd)
             corrCoeff.append(corrCoeffOrd)
-
-        return RV, RVError, corrCoeff, Sindex, Mnlinedepth*0.5
+            lineDepth.append(lineDepthOrd)
+            lineWidth.append(lineWidthOrd)
+            
+        return RV, RVError, corrCoeff, lineDepth, lineWidth, Sindex, Mnlinedepth*0.5
 
 waveRef, refSpectrum = createRefSpectrum('data', 'data/neidL2_20220323T163236.fits')
 # Save reference spectrum
@@ -322,8 +333,8 @@ Sindices,Mndepths = np.zeros(len(files)),np.zeros(len(files))
 #for i in range(len(files)):
 for i in tqdm(range(len(files)), desc="Processing files"):
         #print(files[i][:-5])
-        RV, RVError, corrCoeff, Sindex, Mnlinedepth = singleFileRV('data' + '/' + files[i], wavelength, flux, cSplines, minima, maxima, indicesList)
-        np.savez("npz"+'/'+ files[i][:-5]+"_RV", RV, RVError, corrCoeff)  
+        RV, RVError, corrCoeff, lineDepth, lineWidth, Sindex, Mnlinedepth = singleFileRV('data' + '/' + files[i], wavelength, flux, cSplines, minima, maxima, indicesList)
+        np.savez("npz"+'/'+ files[i][:-5]+"_RV", RV, RVError, corrCoeff, lineDepth, lineWidth)  
         Sindices[i] = Sindex
         Mndepths[i] = Mnlinedepth
 
