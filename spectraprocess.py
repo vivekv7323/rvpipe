@@ -230,7 +230,7 @@ def singleFileRV(path, cSplines, minima, maxima, indicesList):
         wS, fS, eS, bervS = fetch_single(path)
 
         # Interpolate flux of reference to file
-        flux = np.concatenate([cSplines[i](wS) for i in range(np.shape(flux)[0])])
+        flux = np.vstack([cSplines[i](wS[i]) for i in range(np.shape(wS)[0])])
 
         try: 
                 # get Ca II H/K wavelengths        
@@ -285,7 +285,7 @@ def singleFileRV(path, cSplines, minima, maxima, indicesList):
                 lineMin = wS[i][minima[i][j]]
                 fluxSpec = fluxCont[indices]
                 # minimum pixel length of window
-                if ((len(indices[0]) > 10) & (len(indices[0]) < 100) & (~np.isnan(fluxSpec).any()):
+                if ((len(indices[0]) > 10) & (len(indices[0]) < 100) & (~np.isnan(fluxSpec).any())):
                         # get wavelength of interpolated target spectrum in the window
                         waveLine = wS[i][indices]
                         der = cSplines[i](waveLine, 1)
@@ -336,7 +336,7 @@ files = os.listdir('data')
 startA, endA = createTelluricArrays('TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits')
 cSplines, minima, maxima, contDiff, lineDepth, indicesList, preTelMinima = loadRefSpectrum("refSpectrum.npz",startA,endA)
 
-if not os.path.exists('npz):
+if not os.path.exists('npz'):
       os.makedirs('npz')   
 
 Sindices,Mndepths = np.zeros(len(files)),np.zeros(len(files))
