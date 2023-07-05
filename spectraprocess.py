@@ -189,8 +189,7 @@ def loadRefSpectrum(path, startA, endA):
                         # Get location of line peak
                         lineMin = wavelength[i][minima[i][j]]
 
-                        lineDepthOrd[j] = 1 - 2*(0.5*(otherMaxOrd+flux[i][maxima[i][nearestMaxIndex]]) - \
-                                                 flux[i][minima[i][j]])/(otherMaxOrd+flux[i][maxima[i][nearestMaxIndex]])
+                        lineDepthOrd[j] = 1 - 2*flux[i][minima[i][j]]/(otherMaxOrd+flux[i][maxima[i][nearestMaxIndex]])
 
                         # indices of the window 
                         indicesOrd.append(np.where((wavelength[i] < (box+lineMin)) & (wavelength[i] > (lineMin-box))))
@@ -211,7 +210,7 @@ def createTelluricArrays(telPath, wvlPath):
 
         # smooth out a bit to get rid of continuum
         y = y/maximum_filter1d(y, size=2)
-        mask = np.where((np.abs(y-1) > 1e-5))[0]
+        mask = np.where((np.abs(y-1) > 1e-6))[0]
 
         # create groups
         start = x[mask[np.where(np.diff(mask) != 1)]]
@@ -276,7 +275,7 @@ def singleFileRV(path, cSplines, minima, maxima, indicesList):
             if ((i==50) | (i==51)):
                 mnbox = np.abs(wS[i][maxima[i]][np.argmin(np.abs(wS[i][maxima[i]] - 5394.7))] - 5394.7)
                 relFlux = fluxCont[(wS[i] > (5394.7-mnbox)) & (wS[i] < (5394.7+mnbox))]
-                Mnlinedepth += 1 - (np.max(relFlux) - np.min(relFlux))/np.max(relFlux)
+                Mnlinedepth += 1 - (np.min(relFlux))/np.max(relFlux)
 
             # iterate over lines in each order
             for j in range(len(minima[i])):
