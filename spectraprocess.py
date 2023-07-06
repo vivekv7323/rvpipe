@@ -159,15 +159,14 @@ def loadRefSpectrum(path, startA, endA):
 ##        jerkDistance = []
 ##        bisector = []
 ##        numMaxima = []
-        indicesList = []
+        boxList = []
 
         # create line windows
         for i in tqdm(range(len(minima)),desc="creating line windows"):
                 
                 #, massCenterOrd, swOrd, jDOrd, bisectorOrd, numMaximaOrd,
-                contDiffOrd, lineDepthOrd = np.zeros(len(minima[i])), np.zeros(len(minima[i]))#,np.zeros(len(minima[i])),np.zeros(len(minima[i]))
+                contDiffOrd, lineDepthOrd, boxOrd = np.zeros(len(minima[i])), np.zeros(len(minima[i])),np.zeros(len(minima[i]))#,np.zeros(len(minima[i]))
                    #np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
-                indicesOrd = []
                 
                 for j in range(len(minima[i])):
 
@@ -184,21 +183,22 @@ def loadRefSpectrum(path, startA, endA):
                         contDiffOrd[j] = np.abs(otherMaxOrd - flux[i][maxima[i][nearestMaxIndex]])
 
                         # box around window
-                        box = np.abs(wavelength[i][maxima[i][nearestMaxIndex]] - wavelength[i][minima[i][j]])
+                        boxOrd[j] = np.abs(wavelength[i][maxima[i][nearestMaxIndex]] - wavelength[i][minima[i][j]])
 
                         # Get location of line peak
                         lineMin = wavelength[i][minima[i][j]]
 
                         lineDepthOrd[j] = 1 - 2*flux[i][minima[i][j]]/(otherMaxOrd+flux[i][maxima[i][nearestMaxIndex]])
 
-                        # indices of the window 
-                        indicesOrd.append(np.where((wavelength[i] < (box+lineMin)) & (wavelength[i] > (lineMin-box))))
+##                        # indices of the window 
+##                        indicesOrd.append(np.where((wavelength[i] < (box+lineMin)) & (wavelength[i] > (lineMin-box))))
 
                 contDiff.append(contDiffOrd)
-                indicesList.append(indicesOrd)
+                #indicesList.append(indicesOrd)
+                boxList.append(boxOrd)
                 lineDepth.append(lineDepthOrd)
 
-        return cSplines, minima, maxima, contDiff, lineDepth, indicesList, preTelMinima
+        return cSplines, minima, maxima, contDiff, lineDepth, boxList, preTelMinima
 
 '''
 create arrays with telluric line groups ot mask out
@@ -223,7 +223,7 @@ def createTelluricArrays(telPath, wvlPath):
 '''
 process single file
 '''
-def singleFileRV(path, cSplines, minima, maxima, indicesList):
+def singleFileRV(path, cSplines, minima, maxima, boxList):
 
         # Currently working on single file, looping all files later
         wS, fS, eS, bervS = fetch_single(path)
@@ -280,8 +280,9 @@ def singleFileRV(path, cSplines, minima, maxima, indicesList):
             # iterate over lines in each order
             for j in range(len(minima[i])):
                         
-                indices = indicesList[i][j]
+                box = boxList[i][j]
                 lineMin = wS[i][minima[i][j]]
+                indices = np.where((wS[i] < (box+lineMin)) & (wS[i] > (lineMin-box)))
                 fluxSpec = fluxCont[indices]
                 # minimum pixel length of window
                 if ((len(indices[0]) > 10) & (len(indices[0]) < 100) & (~np.isnan(fluxSpec).any())):
@@ -307,8 +308,8 @@ def singleFileRV(path, cSplines, minima, maxima, indicesList):
 ##                                bestpars = parsCov @ designMatrix @ covInv @ fluxSpec
                                 corrCoeffOrd[j] = np.sqrt(np.square(parsCov[1][0])/(parsCov[1][1]*parsCov[0][0]))
                                 RVOrd[j] = (299792458*bestpars[1]/(bestpars[0]*lineMin))
-                                RVErrorOrd[j] = (299792458/lineMin)*np.sqrt((parsCov[1][1]/bestpars[0])**2\
-                                                                         + (parsCov[0][0]*bestpars[1]/(bestpars[0]**2))**2)
+                                RVErrorOrd[j] = (299792458/lineMin)*np.sqrt((parsCov[1][1]/bestpars[0]**2)\
+                                                                         + (np.sqrt(parsCov[0][0])*bestpars[1]/(bestpars[0]**2))**2)
                         except:
                                 #print(np.min(np.abs(maximum_filter1d(fS[i], size=2000))))
                                 raise ValueError('linear regression failed')
@@ -326,14 +327,14 @@ def singleFileRV(path, cSplines, minima, maxima, indicesList):
             
         return RV, RVError, corrCoeff, lineWidth, Sindex, Mnlinedepth*0.5
 
-waveRef, refSpectrum = createRefSpectrum('data', 'data/neidL2_20220323T163236.fits')
-# Save reference spectrum
-np.savez("refSpectrum.npz", waveRef, refSpectrum)
+##waveRef, refSpectrum = createRefSpectrum('data', 'data/neidL2_20220323T163236.fits')
+### Save reference spectrum
+##np.savez("refSpectrum.npz", waveRef, refSpectrum)
 
 # directory for all files
 files = os.listdir('data')
 startA, endA = createTelluricArrays('TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits')
-cSplines, minima, maxima, contDiff, lineDepth, indicesList, preTelMinima = loadRefSpectrum("refSpectrum.npz",startA,endA)
+cSplines, minima, maxima, contDiff, lineDepth, boxList, preTelMinima = loadRefSpectrum("refSpectrum.npz",startA,endA)
 
 if not os.path.exists('npz'):
       os.makedirs('npz')   
@@ -343,7 +344,7 @@ Sindices,Mndepths = np.zeros(len(files)),np.zeros(len(files))
 #for i in range(len(files)):
 for i in tqdm(range(len(files)), desc="Processing files"):
         #print(files[i][:-5])
-        RV, RVError, corrCoeff, lineWidth, Sindex, Mnlinedepth = singleFileRV('data' + '/' + files[i], cSplines, minima, maxima, indicesList)
+        RV, RVError, corrCoeff, lineWidth, Sindex, Mnlinedepth = singleFileRV('data' + '/' + files[i], cSplines, minima, maxima, boxList)
         np.savez("npz"+'/'+ files[i][:-5]+"_RV", RV, RVError, corrCoeff, lineWidth)  
         Sindices[i] = Sindex
         Mndepths[i] = Mnlinedepth
