@@ -23,21 +23,21 @@ def fetch_single(path):
         fits_extension_wavelength = fib + 'WAVE' # wavelength solution extension
         fits_extension_blaze = fib + 'BLAZE' # wavelength solution extension
         # primary header
-        header = fits.open(path)[0].header
+        hdul = fits.open(path)
+        header = hdul[0].header
         # global properties of the spectrum
         berv  = header['SSBRV052'] * 1000 # m/s
         #drift = header['DRIFTRV0'] # m/s
-
         # the actual spectrum (in flux units)
-        data_spec = fits.getdata(path, fits_extension_spectrum)[9:-5,:]
+        data_spec = hdul[1].data[9:-5,:]
         # the actual blaze (in flux units)
-        blz_spec = fits.getdata(path, fits_extension_blaze)[9:-5,:]
+        blz_spec = hdul[15].data[9:-5,:]
         # the variance of the spectrum
         # var = fits.getdata(path, fits_extension_variance)[9:-5,:]
         var = np.ones_like(data_spec)
         var[data_spec>0] = np.sqrt(data_spec[data_spec>0])
         # the wavelength solution of the spectrum (natively in Angstroms)
-        wsol = fits.getdata(path, fits_extension_wavelength)[9:-5,:] # A
+        wsol = hdul[7].data[9:-5,:] # A
         # Shift to heliocentric frame, compensate for zero point offset
         wsol = wsol + wsol * (berv-83285) / 299792458
         # manually filter bad columns
@@ -293,19 +293,18 @@ def singleFileRV(path, cSplines, minima, maxima, boxList):
                         halfMax = 0.5*(np.min(fluxSpec)+np.max(fluxSpec))
                         lineWidthOrd[j] = np.abs(waveLine[waveLine < lineMin][np.argmin(np.abs(fluxSpec[waveLine < lineMin] - halfMax))] -\
                                           waveLine[waveLine > lineMin][np.argmin(np.abs(fluxSpec[waveLine > lineMin] - halfMax))])
-                        # linear least-squares regression
-##                        covInv = np.linalg.inv(np.diag(eS[i][indices]**2))
-##                        designMatrix = np.vstack((flux[i][indices], cSplines[i](waveLine, 1)))
                         # try/except linear regression
                         location = ~np.isnan(flux[i][indices]) & ~np.isnan(fluxSpec)
+                        # linear least-squares regression
                         try:
                                 def model(S,A,Adl):
                                         return A * S + Adl*der[location]
                                 bestpars,parsCov = curve_fit(model,flux[i][indices][location],\
                                                              fluxSpec[location], sigma = errorCont[indices][location], absolute_sigma=True)
-
+##                                covInv = np.linalg.inv(np.diag(errorCont[indices][location]**2))
+##                                designMatrix = np.vstack((flux[i][indices][location], cSplines[i](waveLine[location], 1)))
 ##                                parsCov = np.linalg.inv(designMatrix @ covInv @ designMatrix.T)
-##                                bestpars = parsCov @ designMatrix @ covInv @ fluxSpec
+##                                bestpars = parsCov @ designMatrix @ covInv @ fluxSpec[location]
                                 corrCoeffOrd[j] = np.sqrt(np.square(parsCov[1][0])/(parsCov[1][1]*parsCov[0][0]))
                                 RVOrd[j] = (299792458*bestpars[1]/(bestpars[0]*lineMin))
                                 RVErrorOrd[j] = (299792458/lineMin)*np.sqrt((parsCov[1][1]/bestpars[0]**2)\
@@ -327,9 +326,9 @@ def singleFileRV(path, cSplines, minima, maxima, boxList):
             
         return RV, RVError, corrCoeff, lineWidth, Sindex, Mnlinedepth*0.5
 
-##waveRef, refSpectrum = createRefSpectrum('data', 'data/neidL2_20220323T163236.fits')
-### Save reference spectrum
-##np.savez("refSpectrum.npz", waveRef, refSpectrum)
+waveRef, refSpectrum = createRefSpectrum('data', 'data/neidL2_20220323T163236.fits')
+# Save reference spectrum
+np.savez("refSpectrum.npz", waveRef, refSpectrum)
 
 # directory for all files
 files = os.listdir('data')
