@@ -210,7 +210,7 @@ def createTelluricArrays(telPath, wvlPath):
 
         # smooth out a bit to get rid of continuum
         y = y/maximum_filter1d(y, size=2)
-        mask = np.where((np.abs(y-1) > 1e-6))[0]
+        mask = np.where((np.abs(y-1) > 1e-4))[0]
 
         # create groups
         start = x[mask[np.where(np.diff(mask) != 1)]]
@@ -349,4 +349,4 @@ for i in tqdm(range(len(files)), desc="Processing files"):
         Sindices[i] = Sindex
         Mndepths[i] = Mnlinedepth
 
-np.savez("otherParams", minima, contDiff, lineDepth, Sindices, Mndepths, preTelMinima)
+np.savez("otherParams", minima, contDiff, lineDepth, Sindices, Mndepths, preTelMinima, boxList)
