@@ -11,6 +11,7 @@ from scipy.interpolate import CubicSpline
 from scipy.optimize import curve_fit
 from scipy.ndimage import maximum_filter1d
 from tqdm import tqdm
+from multiprocessing import Pool
 
 '''
 get data from single fits file
@@ -340,8 +341,6 @@ cSplines, minima, maxima, contDiff, lineDepth, boxList, preTelMinima = loadRefSp
 if not os.path.exists('npz'):
       os.makedirs('npz')   
 
-Sindices,Mndepths = np.zeros(len(files)),np.zeros(len(files))
-
 try:
         pool = Pool()
         output = np.asarray(pool.map(FileRV((cSplines, minima, maxima, boxList)), files))
@@ -349,8 +348,5 @@ finally:
         pool.close()
         pool.join()
 
-print(output)      
-#Sindices[i] = Sindex
-#Mndepths[i] = Mnlinedepth
 
-np.savez("otherParams", minima, contDiff, lineDepth, Sindices, Mndepths, preTelMinima, boxList)
+np.savez("otherParams", minima, contDiff, lineDepth, output[:,0], output[:,1], preTelMinima, boxList)
