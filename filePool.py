@@ -13,6 +13,7 @@ from scipy.ndimage import maximum_filter1d
 from tqdm import tqdm
 from multiprocessing import Pool
 
+
 '''
 get data from single fits file
 '''
@@ -95,15 +96,8 @@ def createRefSpectrum(path, reference):
         # get reference file
         waveRef,flux,error,berv = fetch_single(reference)
 
-        # get NEID measurements for reference
-        neidrvRef = fits.open(reference)[12].header['CCFRVMOD']*1000
-        #waveRef += waveRef * neidrvRef/299792458
-
         # initialize array for reference spectrum
-        refSpectrum = np.zeros(np.shape(waveRef))
-
-        #if not os.path.exists('normFlux'):
-        #      os.makedirs('normFlux')      
+        refSpectrum = np.zeros(np.shape(waveRef))   
 
         # integrate fluxes for all files after interpolating them to the same wavelength array
         for file in tqdm(files, desc="integrating reference"):
@@ -112,10 +106,6 @@ def createRefSpectrum(path, reference):
             
             for i in range(len(flux)):
                 flux[i] = flux[i]/maximum_filter1d(np.where(np.isnan(flux[i]),-np.inf, flux[i]), size=1000)
-            #np.savez('normFlux/'+files[i][:-5]+'_norm', flux)
-            
-            neidrv = fits.open(path + '/' + file)[12].header['CCFRVMOD']*1000
-            #wavelength += wavelength * neidrv/299792458
             
             refSpectrum += np.concatenate([interp(waveRef[[i]],wavelength[i],flux[i]) for i in range(np.shape(flux)[0])])
 
@@ -226,7 +216,6 @@ class FileRV(object):
         self.params = params
     def __call__(self, file):
         cSplines, minima, maxima, boxList = self.params
-
         # Currently working on single file, looping all files later
         wS, fS, eS, bervS = fetch_single('data/'+file)
 
@@ -326,12 +315,13 @@ class FileRV(object):
             corrCoeff.append(corrCoeffOrd)
             lineWidth.append(lineWidthOrd)
 
-        np.savez("npz"+'/'+ files[i][:-5]+"_RV", RV, RVError, corrCoeff, lineWidth)      
+        np.savez("npz"+'/'+ file[:-5]+"_RV", RV, RVError, corrCoeff, lineWidth)
+        print("Processed", file)
         return Sindex, Mnlinedepth*0.5
 
-##waveRef, refSpectrum = createRefSpectrum('data', 'data/neidL2_20220323T163236.fits')
-### Save reference spectrum
-##np.savez("refSpectrum.npz", waveRef, refSpectrum)
+waveRef, refSpectrum = createRefSpectrum('data', 'data/neidL2_20220323T163236.fits')
+# Save reference spectrum
+np.savez("refSpectrum.npz", waveRef, refSpectrum)
 
 # directory for all files
 files = os.listdir('data')
