@@ -110,7 +110,7 @@ def createRefSpectrum(path, reference):
         # integrate fluxes for all files after interpolating them to the same wavelength array
         for k in tqdm(range(len(files)), desc="integrating reference"):
                 
-                wavelength,flux,error,neidrvf,timef,anglef = fetch_single(path + '/' + file)
+                wavelength,flux,error,neidrvf,timef,anglef = fetch_single(path + '/' + files[k])
                 angle[k] = anglef
                 neidrv[k] = neidrvf
                 time[k] = timef
@@ -219,108 +219,108 @@ class FileRV(object):
                 self.params = params
         def __call__(self, file):
                 cSplines, minima, maxima, boxList = self.params
-        # Currently working on single file, looping all files later
-        wS, fS, eS,n,t,a = fetch_single('data/'+file)
+                # Currently working on single file, looping all files later
+                wS, fS, eS,n,t,a = fetch_single('data/'+file)
 
-        # Interpolate flux of reference to file
-        flux = np.vstack([cSplines[i](wS[i]) for i in range(np.shape(wS)[0])])
+                # Interpolate flux of reference to file
+                flux = np.vstack([cSplines[i](wS[i]) for i in range(np.shape(wS)[0])])
 
-        try: 
-                # get Ca II H/K wavelengths        
-                CaH = 3968.47
-                CaK = 3933.66
+                try: 
+                        # get Ca II H/K wavelengths        
+                        CaH = 3968.47
+                        CaK = 3933.66
 
-                # Calculate s-index
-                CaHflux1 = np.nansum(fS[10][(wS[10] < (CaH+0.545)) & (wS[10] > (CaH-0.545))])
-                CaHflux2 = np.nansum(fS[9][(wS[9] < (CaH+0.545)) & (wS[9] > (CaH-0.545))])
-                CaKflux1 = np.nansum(fS[8][(wS[8] < (CaK+0.545)) & (wS[8] > (CaK-0.545))])
-                CaKflux2 = np.nansum(fS[9][(wS[9] < (CaK+0.545)) & (wS[9] > (CaK-0.545))])
-                flux3900 = (CaHflux2/CaHflux1)*np.nansum(fS[8][(wS[8] < (3910)) & (wS[8] > (3890))])
-                flux4000 =(CaKflux2/CaKflux1)* np.nansum(fS[10][(wS[10] < (4010)) & (wS[10] > (3990))])
-                Sindex = (CaHflux2+CaKflux2)/(flux3900+flux4000)
-                #RHKprime = pyasl.SMW_RHK(ccfs='noyes', afc='middelkoop', rphot='noyes').SMWtoRHK(Sindex, 5778, 0.656, lc='ms', verbose=False)[0]
+                        # Calculate s-index
+                        CaHflux1 = np.nansum(fS[10][(wS[10] < (CaH+0.545)) & (wS[10] > (CaH-0.545))])
+                        CaHflux2 = np.nansum(fS[9][(wS[9] < (CaH+0.545)) & (wS[9] > (CaH-0.545))])
+                        CaKflux1 = np.nansum(fS[8][(wS[8] < (CaK+0.545)) & (wS[8] > (CaK-0.545))])
+                        CaKflux2 = np.nansum(fS[9][(wS[9] < (CaK+0.545)) & (wS[9] > (CaK-0.545))])
+                        flux3900 = (CaHflux2/CaHflux1)*np.nansum(fS[8][(wS[8] < (3910)) & (wS[8] > (3890))])
+                        flux4000 =(CaKflux2/CaKflux1)* np.nansum(fS[10][(wS[10] < (4010)) & (wS[10] > (3990))])
+                        Sindex = (CaHflux2+CaKflux2)/(flux3900+flux4000)
+                        #RHKprime = pyasl.SMW_RHK(ccfs='noyes', afc='middelkoop', rphot='noyes').SMWtoRHK(Sindex, 5778, 0.656, lc='ms', verbose=False)[0]
 
-                # Get Mn I wavelengths
-                Mn1 = np.where((wS[50][minima[50]] > 5394) & (wS[50][minima[50]] < 5396))[0]
-                Mn2 = np.where((wS[51][minima[51]] > 5394) & (wS[51][minima[51]] < 5396))[0]
-        except:
-                raise ValueError('masking obscures critical lines')
-        
-        #print(CaH, CaK)
-        #print(wS[50][minima[50][Mn1]][0],wS[51][minima[51][Mn2]][0])
-
-        # Calculate RV, RV errors, and other parameters
-        RV = []
-        RVError = []
-        corrCoeff = []
-        lineWidth = []
-        Mnlinedepth = 0
-
-        # calculate RVs for each order
-        for i in range(len(minima)):
+                        # Get Mn I wavelengths
+                        Mn1 = np.where((wS[50][minima[50]] > 5394) & (wS[50][minima[50]] < 5396))[0]
+                        Mn2 = np.where((wS[51][minima[51]] > 5394) & (wS[51][minima[51]] < 5396))[0]
+                except:
+                        raise ValueError('masking obscures critical lines')
                 
-                # continuum division
-                fluxCont = fS[i]/maximum_filter1d(np.where(np.isnan(fS[i]),-np.inf, fS[i]), size=1000)
-                errorCont = eS[i]/maximum_filter1d(np.where(np.isnan(fS[i]),-np.inf, fS[i]), size=1000)
-                # Initialize arrays
-                RVOrd, RVErrorOrd, corrCoeffOrd, lineWidthOrd = np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))\
-                                                                          ,np.zeros(len(minima[i]))
+                #print(CaH, CaK)
+                #print(wS[50][minima[50][Mn1]][0],wS[51][minima[51][Mn2]][0])
 
-                if ((i==50) | (i==51)):
-                mnbox = np.abs(wS[i][maxima[i]][np.argmin(np.abs(wS[i][maxima[i]] - 5394.7))] - 5394.7)
-                relFlux = fluxCont[(wS[i] > (5394.7-mnbox)) & (wS[i] < (5394.7+mnbox))]
-                Mnlinedepth += 1 - (np.min(relFlux))/np.max(relFlux)
+                # Calculate RV, RV errors, and other parameters
+                RV = []
+                RVError = []
+                corrCoeff = []
+                lineWidth = []
+                Mnlinedepth = 0
 
-                # iterate over lines in each order
-                for j in range(len(minima[i])):
+                # calculate RVs for each order
+                for i in range(len(minima)):
                         
-                        box = boxList[i][j]
-                        lineMin = wS[i][minima[i][j]]
-                        indices = np.where((wS[i] < (box+lineMin)) & (wS[i] > (lineMin-box)))
-                        fluxSpec = fluxCont[indices]
-                        # minimum pixel length of window
-                        if ((len(indices[0]) > 10) & (len(indices[0]) < 100) & (~np.isnan(fluxSpec).any())):
-                                # get wavelength of interpolated target spectrum in the window
-                                waveLine = wS[i][indices]
-                                der = cSplines[i](waveLine, 1)
-                                #lineDepthOrd[j] = 1 - 
-                                halfMax = 0.5*(np.min(fluxSpec)+np.max(fluxSpec))
-                                lineWidthOrd[j] = np.abs(waveLine[waveLine < lineMin][np.argmin(np.abs(fluxSpec[waveLine < lineMin] - halfMax))] -\
-                                                  waveLine[waveLine > lineMin][np.argmin(np.abs(fluxSpec[waveLine > lineMin] - halfMax))])
-                                # try/except linear regression
-                                location = ~np.isnan(flux[i][indices]) & ~np.isnan(fluxSpec)
-                                # linear least-squares regression
-                                try:
-                                        def model(S,A,Adl):
-                                                return A * S + Adl*der[location]
-                                        bestpars,parsCov = curve_fit(model,flux[i][indices][location],\
-                                                                     fluxSpec[location], sigma = errorCont[indices][location], absolute_sigma=True)
-##                                        covInv = np.linalg.inv(np.diag(errorCont[indices][location]**2))
-##                                        designMatrix = np.vstack((flux[i][indices][location], cSplines[i](waveLine[location], 1)))
-##                                        parsCov = np.linalg.inv(designMatrix @ covInv @ designMatrix.T)
-##                                        bestpars = parsCov @ designMatrix @ covInv @ fluxSpec[location]
-                                        corrCoeffOrd[j] = np.sqrt(np.square(parsCov[1][0])/(parsCov[1][1]*parsCov[0][0]))
-                                        RVOrd[j] = (299792458*bestpars[1]/(bestpars[0]*lineMin))
-                                        RVErrorOrd[j] = (299792458/lineMin)*np.sqrt((parsCov[1][1]/bestpars[0]**2)\
-                                                                                 + (np.sqrt(parsCov[0][0])*bestpars[1]/(bestpars[0]**2))**2)
-                                except:
-                                        #print(np.min(np.abs(maximum_filter1d(fS[i], size=2000))))
-                                        raise ValueError('linear regression failed')
+                        # continuum division
+                        fluxCont = fS[i]/maximum_filter1d(np.where(np.isnan(fS[i]),-np.inf, fS[i]), size=1000)
+                        errorCont = eS[i]/maximum_filter1d(np.where(np.isnan(fS[i]),-np.inf, fS[i]), size=1000)
+                        # Initialize arrays
+                        RVOrd, RVErrorOrd, corrCoeffOrd, lineWidthOrd = np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))\
+                                                                                  ,np.zeros(len(minima[i]))
+
+                        if ((i==50) | (i==51)):
+                                mnbox = np.abs(wS[i][maxima[i]][np.argmin(np.abs(wS[i][maxima[i]] - 5394.7))] - 5394.7)
+                                relFlux = fluxCont[(wS[i] > (5394.7-mnbox)) & (wS[i] < (5394.7+mnbox))]
+                                Mnlinedepth += 1 - (np.min(relFlux))/np.max(relFlux)
+
+                        # iterate over lines in each order
+                        for j in range(len(minima[i])):
                                 
-                        else:
-                                RVOrd[j] = np.nan
-                                RVErrorOrd[j] = np.nan
-                                corrCoeffOrd[j] = np.nan
-                                lineWidthOrd[j] = np.nan
-                        
-                np.concatenate((RV, RVOrd))
-                np.concatenate((RVError, RVErrorOrd))
-                np.concatenate((corrCoeff, corrCoeffOrd))
-                np.concatenate((lineWidth, lineWidthOrd))
+                                box = boxList[i][j]
+                                lineMin = wS[i][minima[i][j]]
+                                indices = np.where((wS[i] < (box+lineMin)) & (wS[i] > (lineMin-box)))
+                                fluxSpec = fluxCont[indices]
+                                # minimum pixel length of window
+                                if ((len(indices[0]) > 10) & (len(indices[0]) < 100) & (~np.isnan(fluxSpec).any())):
+                                        # get wavelength of interpolated target spectrum in the window
+                                        waveLine = wS[i][indices]
+                                        der = cSplines[i](waveLine, 1)
+                                        #lineDepthOrd[j] = 1 - 
+                                        halfMax = 0.5*(np.min(fluxSpec)+np.max(fluxSpec))
+                                        lineWidthOrd[j] = np.abs(waveLine[waveLine < lineMin][np.argmin(np.abs(fluxSpec[waveLine < lineMin] - halfMax))] -\
+                                                          waveLine[waveLine > lineMin][np.argmin(np.abs(fluxSpec[waveLine > lineMin] - halfMax))])
+                                        # try/except linear regression
+                                        location = ~np.isnan(flux[i][indices]) & ~np.isnan(fluxSpec)
+                                        # linear least-squares regression
+                                        try:
+                                                def model(S,A,Adl):
+                                                        return A * S + Adl*der[location]
+                                                bestpars,parsCov = curve_fit(model,flux[i][indices][location],\
+                                                                             fluxSpec[location], sigma = errorCont[indices][location], absolute_sigma=True)
+        ##                                        covInv = np.linalg.inv(np.diag(errorCont[indices][location]**2))
+        ##                                        designMatrix = np.vstack((flux[i][indices][location], cSplines[i](waveLine[location], 1)))
+        ##                                        parsCov = np.linalg.inv(designMatrix @ covInv @ designMatrix.T)
+        ##                                        bestpars = parsCov @ designMatrix @ covInv @ fluxSpec[location]
+                                                corrCoeffOrd[j] = np.sqrt(np.square(parsCov[1][0])/(parsCov[1][1]*parsCov[0][0]))
+                                                RVOrd[j] = (299792458*bestpars[1]/(bestpars[0]*lineMin))
+                                                RVErrorOrd[j] = (299792458/lineMin)*np.sqrt((parsCov[1][1]/bestpars[0]**2)\
+                                                                                         + (np.sqrt(parsCov[0][0])*bestpars[1]/(bestpars[0]**2))**2)
+                                        except:
+                                                #print(np.min(np.abs(maximum_filter1d(fS[i], size=2000))))
+                                                raise ValueError('linear regression failed')
+                                        
+                                else:
+                                        RVOrd[j] = np.nan
+                                        RVErrorOrd[j] = np.nan
+                                        corrCoeffOrd[j] = np.nan
+                                        lineWidthOrd[j] = np.nan
+                                
+                        np.concatenate((RV, RVOrd))
+                        np.concatenate((RVError, RVErrorOrd))
+                        np.concatenate((corrCoeff, corrCoeffOrd))
+                        np.concatenate((lineWidth, lineWidthOrd))
 
-        np.savez("npz"+'/'+ file[:-5]+"_RV", RV, RVError, corrCoeff, lineWidth)
-        print("Processed", file)
-        return Sindex, Mnlinedepth*0.5
+                np.savez("npz"+'/'+ file[:-5]+"_RV", RV, RVError, corrCoeff, lineWidth)
+                print("Processed", file)
+                return Sindex, Mnlinedepth*0.5
 
 waveRef, refSpectrum = createRefSpectrum('data', 'data/neidL2_20220323T163236.fits')
 # Save reference spectrum
