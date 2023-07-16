@@ -5,9 +5,6 @@ from astropy.io import fits
 from astropy.time import Time
 from astropy.timeseries import LombScargle
 from numpy.core.multiarray import interp
-#from PyAstronomy import pyasl
-from astroplan import Observer
-#from timeit import default_timer as timer
 from scipy import stats
 from scipy.signal import find_peaks
 from scipy.interpolate import CubicSpline
@@ -77,117 +74,38 @@ def fetch_single(path):
 '''
 creates reference spectrum from files in path, and a wavelength reference
 '''
-def createRefSpectrum(path, reference):
+def create_ref_spectrum(path, reference):
         
         # directory for all files
         files = os.listdir(path)
 
         # get reference file
-        waveRef,flux,error = fetch_single(reference)
+        waveref,flux,error = fetch_single(reference)
 
         # initialize array for reference spectrum
-        refSpectrum = np.zeros(np.shape(waveRef))
+        refspectrum = np.zeros(np.shape(waveref))
 
         # integrate fluxes for all files after interpolating them to the same wavelength array
         for k in tqdm(range(len(files)), desc="integrating reference"):
-                
+
+                # get file
                 wavelength,flux,error = fetch_single(path + '/' + files[k])
 
+                # normalize flux
                 for i in range(len(flux)):
                         flux[i] = flux[i]/maximum_filter1d(np.where(np.isnan(flux[i]),-np.inf, flux[i]), size=1000)
+                        
+                # interpolate and integrate
+                refspectrum += np.concatenate([interp(waveref[[j]],wavelength[j],flux[j]) for j in range(np.shape(flux)[0])])
 
-                refSpectrum += np.concatenate([interp(waveRef[[j]],wavelength[j],flux[j]) for j in range(np.shape(flux)[0])])
-
-        return waveRef, refSpectrum/len(files)
+        return waveref, refspectrum/len(files)
 
 '''
 load reference spectrum, create telluric mask and line windows
 '''
-def loadRefSpectrum(path, startA, endA):
-       
-        # Load reference spectrum
-        result = np.load(path)
-        wavelength = result["arr_0"]
-        flux = result["arr_1"]
+def load_ref_spectrum(path, telPath, wvlPath):
 
-        bigMask = (wavelength<0)
-        for i in tqdm(range(len(startA)), desc="constructing telluric mask"):
-                bigMask |= ((wavelength>(startA[i]-0.4))&(wavelength<(endA[i]+0.4)))
-
-        template = pd.read_csv("T1o2_spec-2.csv")
-
-        tempW = template["wave"]*(1 - (83285/299792458))
-        fluxW = template["flux"]
-        tempmin = tempW[find_peaks(np.nanmax(fluxW)-fluxW, distance=5,height=.1, prominence=.1)[0]]
-
-        '''
-        Get local minima for absorption lines, get cubic spline model,       
-        get local maxima to set windows for each line 
-        '''
-        minima = []
-        maxima = []
-        cSplines = []
-        for i in range(np.shape(flux)[0]):
-                cSplines.append(CubicSpline(wavelength[i][np.isfinite(flux[i])], flux[i][np.isfinite(flux[i])]))
-                maxima.append(find_peaks(flux[i], distance=1,height=.02, prominence=.02)[0])
-                minList = find_peaks(np.nanmax(flux[i])-flux[i], distance=5,height=.1, prominence=.1)[0]
-                minima.append(minList[np.isin(minList, np.where(bigMask[i] == False)[0])])
-
-        contDiff = []
-        lineDepth = []
-        templatemask = []
-##        massCenter = []
-##        smallWindow = []
-##        jerkDistance = []
-##        bisector = []
-##        numMaxima = []
-        boxList = []
-
-        # create line windows
-        for i in tqdm(range(len(minima)),desc="creating line windows"):
-                
-                #, massCenterOrd, swOrd, jDOrd, bisectorOrd, numMaximaOrd,
-                contDiffOrd, lineDepthOrd, boxOrd, templateord = np.zeros(len(minima[i])), np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
-                   #np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
-                
-                for j in range(len(minima[i])):
-
-                        # Get location of line peak
-                        lineMin = wavelength[i][minima[i][j]]
-                        if (np.min(np.abs(tempmin - lineMin)) < 0.1):
-                                templateord[j] = True
-                        else:
-                                templateord[j] = False
-
-                        # get local maxima surrounding line
-                        nearestMaxIndex = np.argmin(np.abs(maxima[i] - minima[i][j]))
-                        if (wavelength[i][maxima[i][nearestMaxIndex]] >  wavelength[i][minima[i][j]]) & (nearestMaxIndex != 0):
-                            otherMaxOrd = flux[i][maxima[i][nearestMaxIndex - 1]]
-                        elif (wavelength[i][maxima[i][nearestMaxIndex]] <  wavelength[i][minima[i][j]]) & (nearestMaxIndex != (len(maxima[i])-1)):
-                            otherMaxOrd = flux[i][maxima[i][nearestMaxIndex + 1]]
-                        else:
-                            otherMaxOrd = np.nan
-
-                        # difference between maxima
-                        contDiffOrd[j] = np.abs(otherMaxOrd - flux[i][maxima[i][nearestMaxIndex]])
-
-                        # box around window
-                        boxOrd[j] = np.abs(wavelength[i][maxima[i][nearestMaxIndex]] - wavelength[i][minima[i][j]])
-
-                        lineDepthOrd[j] = 1 - 2*flux[i][minima[i][j]]/(otherMaxOrd+flux[i][maxima[i][nearestMaxIndex]])
-
-                contDiff.append(contDiffOrd)
-                boxList.append(boxOrd)
-                lineDepth.append(lineDepthOrd)
-                templatemask.append(templateord)
-
-        return wavelength, cSplines, minima, maxima, contDiff, lineDepth, boxList, templatemask
-
-'''
-create arrays with telluric line groups ot mask out
-'''
-def createTelluricArrays(telPath, wvlPath):
-
+        # Open telluric template
         y = fits.open(telPath)[0].data        
         x = fits.open(wvlPath)[0].data * 10 # angstrom
 
@@ -199,20 +117,97 @@ def createTelluricArrays(telPath, wvlPath):
         start = x[mask[np.where(np.diff(mask) != 1)]]
         end = x[mask[np.where(np.diff(mask) != 1)[0]+1]]
         start = np.insert(start, len(start), x[mask[-1]])
-        end = np.insert(end, 0, x[mask[0]])    
+        end = np.insert(end, 0, x[mask[0]])   
+       
+        # Load reference spectrum
+        result = np.load(path)
+        wavelength = result["arr_0"]
+        flux = result["arr_1"]
 
-        return start,end
+        # create telluric mask using grouups
+        big_mask = (wavelength<0)
+        for i in tqdm(range(len(startA)), desc="constructing telluric mask"):
+                big_mask |= ((wavelength>(startA[i]-0.4))&(wavelength<(endA[i]+0.4)))
+
+        template = pd.read_csv("T1o2_spec-2.csv")
+
+        temp_w = template["wave"]*(1 - (83285/299792458))
+        flux_w = template["flux"]
+        tempmin = temp_w[find_peaks(np.nanmax(flux_w)-flux_w, distance=5,height=.1, prominence=.1)[0]]
+
+        '''
+        Get local minima for absorption lines, get cubic spline model,       
+        get local maxima to set windows for each line 
+        '''
+        minima = []
+        maxima = []
+        csplines = []
+        for i in range(np.shape(flux)[0]):
+                csplines.append(CubicSpline(wavelength[i][np.isfinite(flux[i])], flux[i][np.isfinite(flux[i])]))
+                maxima.append(find_peaks(flux[i], distance=1,height=.02, prominence=.02)[0])
+                minlist = find_peaks(np.nanmax(flux[i])-flux[i], distance=5,height=.1, prominence=.1)[0]
+                minima.append(minlist[np.isin(minlist, np.where(big_mask[i] == False)[0])])
+
+        contdiff = []
+        linedepth = []
+        templatemask = []
+##        masscenter = []
+##        smallwindow = []
+##        jerkdistance = []
+##        bisector = []
+##        num_maxima = []
+        boxlist = []
+
+        # create line windows
+        for i in tqdm(range(len(minima)),desc="creating line windows"):
+                
+                #, massCenterOrd, swOrd, jDOrd, bisectorOrd, numMaximaOrd,
+                contdiff_ord, linedepth_ord, boxord, templateord = np.zeros(len(minima[i])), np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
+                   #np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
+                
+                for j in range(len(minima[i])):
+
+                        # Get location of line peak
+                        linemin = wavelength[i][minima[i][j]]
+                        if (np.min(np.abs(tempmin - linemin)) < 0.1):
+                                templateord[j] = True
+                        else:
+                                templateord[j] = False
+
+                        # get local maxima surrounding line
+                        nearestmaxindex = np.argmin(np.abs(maxima[i] - minima[i][j]))
+                        if (wavelength[i][maxima[i][nearestmaxindex]] >  wavelength[i][minima[i][j]]) & (nearestmaxindex != 0):
+                            othermax_ord = flux[i][maxima[i][nearestmaxindex - 1]]
+                        elif (wavelength[i][maxima[i][nearestmaxindex]] <  wavelength[i][minima[i][j]]) & (nearestmaxindex != (len(maxima[i])-1)):
+                            othermax_ord = flux[i][maxima[i][nearestmaxindex + 1]]
+                        else:
+                            othermax_ord = np.nan
+
+                        # difference between maxima
+                        contdiff_ord[j] = np.abs(othermax_ord - flux[i][maxima[i][nearestmaxindex]])
+
+                        # box around window
+                        boxord[j] = np.abs(wavelength[i][maxima[i][nearestmaxindex]] - wavelength[i][minima[i][j]])
+
+                        linedepth_ord[j] = 1 - 2*flux[i][minima[i][j]]/(othermax_ord+flux[i][maxima[i][nearestmaxindex]])
+
+                contdiff.append(contdiff_ord)
+                boxlist.append(boxord)
+                linedepth.append(linedepth_ord)
+                templatemask.append(templateord)
+
+        return wavelength, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask
 
 class FileRV(object):
         def __init__(self, params):
                 self.params = params
         def __call__(self, file):
-                cSplines, minima, maxima, contDiff, lineDepth, boxList, templatemask = self.params
+                csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask = self.params
                 # Currently working on single file, looping all files later
                 wS, fS, eS = fetch_single('data/'+file)
 
                 # Interpolate flux of reference to file
-                flux = np.vstack([cSplines[i](wS[i]) for i in range(np.shape(wS)[0])])
+                flux = np.vstack([csplines[i](wS[i]) for i in range(np.shape(wS)[0])])
 
                 try:
                         # get Ca II H/K wavelengths
@@ -226,8 +221,8 @@ class FileRV(object):
                         CaKflux2 = np.nansum(fS[9][(wS[9] < (CaK+0.545)) & (wS[9] > (CaK-0.545))])
                         flux3900 = (CaHflux2/CaHflux1)*np.nansum(fS[8][(wS[8] < (3910)) & (wS[8] > (3890))])
                         flux4000 =(CaKflux2/CaKflux1)* np.nansum(fS[10][(wS[10] < (4010)) & (wS[10] > (3990))])
-                        Sindex = (CaHflux2+CaKflux2)/(flux3900+flux4000)
-                        #RHKprime = pyasl.SMW_RHK(ccfs='noyes', afc='middelkoop', rphot='noyes').SMWtoRHK(Sindex, 5778, 0.656, lc='ms', verbose=False)[0]
+                        s_index = (CaHflux2+CaKflux2)/(flux3900+flux4000)
+                        #RHKprime = pyasl.SMW_RHK(ccfs='noyes', afc='middelkoop', rphot='noyes').SMWtoRHK(s_index, 5778, 0.656, lc='ms', verbose=False)[0]
 
                         # Get Mn I wavelengths
                         Mn1 = np.where((wS[50][minima[50]] > 5394) & (wS[50][minima[50]] < 5396))[0]
@@ -235,170 +230,167 @@ class FileRV(object):
                 except:
                         raise ValueError('masking obscures critical lines')
 
-                #print(CaH, CaK)
-                #print(wS[50][minima[50][Mn1]][0],wS[51][minima[51][Mn2]][0])
+                # Calculate rv, rv errors, and other parameters
+                rv = []
+                rverror = []
+                corrcoeff = []
+                linewidth = []
+                mn_linedepth = 0
 
-                # Calculate RV, RV errors, and other parameters
-                RV = []
-                RVError = []
-                corrCoeff = []
-                lineWidth = []
-                Mnlinedepth = 0
-
-                # calculate RVs for each order
+                # calculate rvs for each order
                 for i in range(len(minima)):
 
                         # continuum division
-                        fluxCont = fS[i]/maximum_filter1d(np.where(np.isnan(fS[i]),-np.inf, fS[i]), size=1000)
+                        fluxcont = fS[i]/maximum_filter1d(np.where(np.isnan(fS[i]),-np.inf, fS[i]), size=1000)
                         errorCont = eS[i]/maximum_filter1d(np.where(np.isnan(fS[i]),-np.inf, fS[i]), size=1000)
                         # Initialize arrays
-                        RVOrd, RVErrorOrd, corrCoeffOrd, lineWidthOrd = np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))\
+                        rvord, rverror_ord, corrcoeff_ord, linewidth_ord = np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
                                                                                 ,np.zeros(len(minima[i]))
 
                         if ((i==50) | (i==51)):
                                 mnbox = np.abs(wS[i][maxima[i]][np.argmin(np.abs(wS[i][maxima[i]] - 5394.7))] - 5394.7)
-                                relFlux = fluxCont[(wS[i] > (5394.7-mnbox)) & (wS[i] < (5394.7+mnbox))]
-                                Mnlinedepth += 1 - (np.min(relFlux))/np.max(relFlux)
+                                relflux = fluxcont[(wS[i] > (5394.7-mnbox)) & (wS[i] < (5394.7+mnbox))]
+                                mn_linedepth += 1 - (np.min(relflux))/np.max(relflux)
 
                         # iterate over lines in each order
                         for j in range(len(minima[i])):
 
-                                box = boxList[i][j]
-                                lineMin = wS[i][minima[i][j]]
-                                indices = np.where((wS[i] < (box+lineMin)) & (wS[i] > (lineMin-box)))
-                                fluxSpec = fluxCont[indices]
+                                box = boxlist[i][j]
+                                linemin = wS[i][minima[i][j]]
+                                indices = np.where((wS[i] < (box+linemin)) & (wS[i] > (linemin-box)))
+                                fluxspec = fluxcont[indices]
                                 # minimum pixel length of window
-                                if ((len(indices[0]) > 10) & (len(indices[0]) < 100) & (~np.isnan(fluxSpec).any()) & (lineDepth[i][j] > 0.005) & (contDiff[i][j] < 0.05)\
+                                if ((len(indices[0]) > 10) & (len(indices[0]) < 100) & (~np.isnan(fluxspec).any()) & (linedepth[i][j] > 0.005) & (contdiff[i][j] < 0.05)
                                     & (templatemask[i][j] == True)):
                                         # get wavelength of interpolated target spectrum in the window
-                                        waveLine = wS[i][indices]
-                                        der = cSplines[i](waveLine, 1)
-                                        halfMax = 0.5*(np.min(fluxSpec)+np.max(fluxSpec))
-                                        lineWidthOrd[j] = np.abs(waveLine[waveLine < lineMin][np.argmin(np.abs(fluxSpec[waveLine < lineMin] - halfMax))] -\
-                                                        waveLine[waveLine > lineMin][np.argmin(np.abs(fluxSpec[waveLine > lineMin] - halfMax))])
+                                        waveline = wS[i][indices]
+                                        der = csplines[i](waveline, 1)
+                                        halfmax = 0.5*(np.min(fluxspec)+np.max(fluxspec))
+                                        linewidth_ord[j] = np.abs(waveline[waveline < linemin][np.argmin(np.abs(fluxspec[waveline < linemin] - halfmax))] -
+                                                        waveline[waveline > linemin][np.argmin(np.abs(fluxspec[waveline > linemin] - halfmax))])
                                         # try/except linear regression
-                                        location = ~np.isnan(flux[i][indices]) & ~np.isnan(fluxSpec)
+                                        location = ~np.isnan(flux[i][indices]) & ~np.isnan(fluxspec)
                                         # linear least-squares regression
                                         try:
                                                 def model(S,A,Adl):
                                                         return A * S + Adl*der[location]
-                                                bestpars,parsCov = curve_fit(model,flux[i][indices][location],\
-                                                                        fluxSpec[location], sigma = errorCont[indices][location], absolute_sigma=True)
+                                                bestpars,parscov = curve_fit(model,flux[i][indices][location],
+                                                                        fluxspec[location], sigma = errorCont[indices][location], absolute_sigma=True)
         ##                                        covInv = np.linalg.inv(np.diag(errorCont[indices][location]**2))
-        ##                                        designMatrix = np.vstack((flux[i][indices][location], cSplines[i](waveLine[location], 1)))
-        ##                                        parsCov = np.linalg.inv(designMatrix @ covInv @ designMatrix.T)
-        ##                                        bestpars = parsCov @ designMatrix @ covInv @ fluxSpec[location]
-                                                corrCoeffOrd[j] = np.sqrt(np.square(parsCov[1][0])/(parsCov[1][1]*parsCov[0][0]))
-                                                RVOrd[j] = (-299792458*bestpars[1]/(bestpars[0]*lineMin))
-                                                RVErrorOrd[j] = (299792458/lineMin)*np.sqrt((parsCov[1][1]/bestpars[0]**2)\
-                                                                                        + (np.sqrt(parsCov[0][0])*bestpars[1]/(bestpars[0]**2))**2)
+        ##                                        designMatrix = np.vstack((flux[i][indices][location], csplines[i](waveline[location], 1)))
+        ##                                        parscov = np.linalg.inv(designMatrix @ covInv @ designMatrix.T)
+        ##                                        bestpars = parscov @ designMatrix @ covInv @ fluxspec[location]
+                                                corrcoeff_ord[j] = np.sqrt(np.square(parscov[1][0])/(parscov[1][1]*parscov[0][0]))
+                                                rvord[j] = (-299792458*bestpars[1]/(bestpars[0]*linemin))
+                                                rverror_ord[j] = (299792458/linemin)*np.sqrt((parscov[1][1]/bestpars[0]**2)\
+                                                                                        + (np.sqrt(parscov[0][0])*bestpars[1]/(bestpars[0]**2))**2)
                                         except:
                                                 #print(np.min(np.abs(maximum_filter1d(fS[i], size=2000))))
                                                 raise ValueError('linear regression failed')
 
                                 else:
-                                        RVOrd[j] = np.nan
-                                        RVErrorOrd[j] = np.nan
-                                        corrCoeffOrd[j] = np.nan
-                                        lineWidthOrd[j] = np.nan
-                        RV = np.concatenate((RV, RVOrd))
-                        RVError = np.concatenate((RVError, RVErrorOrd))
-                        corrCoeff = np.concatenate((corrCoeff, corrCoeffOrd))
-                        lineWidth = np.concatenate((lineWidth, lineWidthOrd))
+                                        rvord[j] = np.nan
+                                        rverror_ord[j] = np.nan
+                                        corrcoeff_ord[j] = np.nan
+                                        linewidth_ord[j] = np.nan
+                        rv = np.concatenate((rv, rvord))
+                        rverror = np.concatenate((rverror, rverror_ord))
+                        corrcoeff = np.concatenate((corrcoeff, corrcoeff_ord))
+                        linewidth = np.concatenate((linewidth, linewidth_ord))
 
-                np.savez("npz"+'/'+ file[:-5]+"_RV", RV, RVError, corrCoeff, lineWidth)
-                print("Processed", file)
-                return Sindex, Mnlinedepth*0.5
+                np.savez("npz"+'/'+ file[:-5]+"_rv", rv, rverror, corrcoeff, linewidth)
+                #print("Processed", file)
+                return s_index, mn_linedepth*0.5
 
-waveRef, refSpectrum = createRefSpectrum('data', 'data/neidL2_20220323T163236.fits')
+waveref, refspectrum = create_ref_spectrum('data', 'data/neidL2_20220323T163236.fits')
 # Save reference spectrum
-np.savez("refSpectrum.npz", waveRef, refSpectrum)
+np.savez("refspectrum.npz", waveref, refspectrum)
 
 # directory for all files
 files = os.listdir('data')
-startA, endA = createTelluricArrays('TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits')
-waveRef, cSplines, minima, maxima, contDiff, lineDepth, boxList, templatemask = loadRefSpectrum("refSpectrum.npz",startA,endA)
+waveref, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask = load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits')
 
 if not os.path.exists('npz'):
         os.makedirs('npz')   
 
 with Pool() as pool:
-        output = np.asarray(pool.map(FileRV((cSplines, minima, maxima, contDiff, lineDepth, boxList, templatemask)), files))
+        output = np.asarray(pool.map(FileRV((csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask)), files))
 
-wavelines = np.concatenate([waveRef[i][minima[i]] for i in range(len(minima))])
+wavelines = np.concatenate([waveref[i][minima[i]] for i in range(len(minima))])
 
 files = os.listdir('npz')
 
-avgRVErrLine = np.empty(shape=(len(files), len(wavelines)))
+avg_rverr_line = np.empty(shape=(len(files), len(wavelines)))
 
 for i in range(len(files)):
         arrays = np.load('npz/'+files[i])
-        avgRVErrLine[i] = arrays["arr_1"]
-avgRVErrLine = np.nanmean(avgRVErrLine, axis=0)
+        avg_rverr_line[i] = arrays["arr_1"]
+avg_rverr_line = np.nanmean(avg_rverr_line, axis=0)
 
-dupMask = np.zeros(len(wavelines), dtype=bool)
+dupmask = np.zeros(len(wavelines), dtype=bool)
 for i in range(len(wavelines)):
         zL = np.abs(wavelines - wavelines[i])
         duplicates = np.where((zL < 0.1))[0]
         if (len(duplicates) > 1):
-                dupMask[duplicates[duplicates != duplicates[np.argmin(avgRVErrLine[duplicates])]]] = True
-dupMask[np.where(avgRVErrLine == np.nan)] = True
+                dupmask[duplicates[duplicates != duplicates[np.argmin(avg_rverr_line[duplicates])]]] = True
+dupmask[np.where(avg_rverr_line == np.nan)] = True
 
-wavelines = wavelines[~dupMask]
-lineDepth = np.concatenate(lineDepth)[~dupMask]
-contDiff = np.concatenate(contDiff)[~dupMask]
+wavelines = wavelines[~dupmask]
+linedepth = np.concatenate(linedepth)[~dupmask]
+contdiff = np.concatenate(contdiff)[~dupmask]
 
-lineDepthr = lineDepth[wavelines > 7000]
-contDiffr = contDiff[wavelines > 7000]
+linedepthr = linedepth[wavelines > 7000]
+contdiffr = contdiff[wavelines > 7000]
 
 # initialize other arrays
-meansr,means,error,neidrv,time,angle,numLines=np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files))
+meansr,means,error,neidrv,time,angle,numlines=np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files))
 
-RVArrays = np.empty(shape=(len(files), len(wavelines)))
-RVErrArrays = np.empty(shape=(len(files), len(wavelines)))
+rvarrays = np.empty(shape=(len(files), len(wavelines)))
+rverr_arrays = np.empty(shape=(len(files), len(wavelines)))
 
-for i in tqdm(range(len(files))):
+for i in tqdm(range(len(files)), desc="pearson correlation"):
 
         arrays = np.load('npz/'+files[i])
 
         hdul = fits.open('data/'+files[i][:-7]+".fits")
 
         angle[i] = hdul[0].header['SUNAGL']
-        neidrv[i] = hdul[12].header['CCFRVMOD']*1000
+        neidrv[i] = hdul[12].header['CCFrvMOD']*1000
         time[i] = hdul[12].header['CCFJDMOD']
 
-        RV = arrays["arr_0"][~dupMask]
-        RVErr = arrays["arr_1"][~dupMask]
+        rv = arrays["arr_0"][~dupmask]
+        rverr = arrays["arr_1"][~dupmask]
 
-        RVred = RV[wavelines > 7000]
-        RVErrred = RVErr[wavelines > 7000]
+        rvred = rv[wavelines > 7000]
+        rverr_red = rverr[wavelines > 7000]
 
-        cutr = np.where((RVErrred < 3*np.nanmean(RVErrred)) &\
-                (np.abs(RVred - np.nanmean(RVred)) < 3*np.nanstd(RVred)))
-        meansr[i] = np.sum(RVred[cutr]/(RVErrred[cutr]**2))/np.sum(1/(RVErrred[cutr]**2))
+        cutr = np.where((rverr_red < 3*np.nanmean(rverr_red)) &
+                (np.abs(rvred - np.nanmean(rvred)) < 3*np.nanstd(rvred)))
+        meansr[i] = np.sum(rvred[cutr]/(rverr_red[cutr]**2))/np.sum(1/(rverr_red[cutr]**2))
 
-        RVArrays[i] = RV
-        RVErrArrays[i] = RVErr
+        rvarrays[i] = rv
+        rverr_arrays[i] = rverr
 
-pearsonCorr = np.zeros(len(RVArrays.T))
-for i in range(len(RVArrays.T)):
-        line = RVArrays.T[i]
+pearsoncorr = np.zeros(len(rvarrays.T))
+
+for i in range(len(rvarrays.T)):
+        line = rvarrays.T[i]
         try:
-                pearsonCorr[i] = pearsonr(meansr[~np.isnan(line)], line[~np.isnan(line)])[0]
+                pearsoncorr[i] = pearsonr(meansr[~np.isnan(line)], line[~np.isnan(line)])[0]
         except:
-                pearsonCorr[i] = np.nan
+                pearsoncorr[i] = np.nan
 
 for i in range(len(files)):
-        RV = RVArrays[i]
-        RVErr = RVErrArrays[i]
+        rv = rvarrays[i]
+        rverr = rverr_arrays[i]
 
-        cut = np.where((RVErr < 3*np.nanmean(RVErr)) &\
-        (np.abs(RV - np.nanmean(RV)) < 3*np.nanstd(RV))& (np.abs(pearsonCorr) < 0.5))
+        cut = np.where((rverr < 3*np.nanmean(rverr)) &
+        (np.abs(rv - np.nanmean(rv)) < 3*np.nanstd(rv))& (np.abs(pearsoncorr) < 0.5))
 
-        numLines[i] = len(RV[cut])
+        numlines[i] = len(rv[cut])
 
-        means[i] = np.sum(RV[cut]/(RVErr[cut]**2))/np.sum(1/(RVErr[cut]**2))
-        error[i] = np.mean(RVErr[cut])
+        means[i] = np.sum(rv[cut]/(rverr[cut]**2))/np.sum(1/(rverr[cut]**2))
+        error[i] = np.mean(rverr[cut])
 
-np.savez("allLines", RVArrays, RVErrArrays)
-np.savez("outputFile", means, error, neidrv, time, angle, wavelines, contDiff, lineDepth, output[:,0], output[:,1], numLines)
+np.savez("all_lines", rvarrays, rverr_arrays)
+np.savez("output_file", means, error, neidrv, time, angle, wavelines, contdiff, linedepth, output[:,0], output[:,1], numlines)
