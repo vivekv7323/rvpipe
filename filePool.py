@@ -103,11 +103,11 @@ def create_ref_spectrum(path, reference):
 '''
 load reference spectrum, create telluric mask and line windows
 '''
-def load_ref_spectrum(path, telPath, wvlPath):
+def load_ref_spectrum(path, telpath, wvlpath):
 
         # Open telluric template
-        y = fits.open(telPath)[0].data        
-        x = fits.open(wvlPath)[0].data * 10 # angstrom
+        y = fits.open(telpath)[0].data        
+        x = fits.open(wvlpath)[0].data * 10 # angstrom
 
         # smooth out a bit to get rid of continuum
         y = y/maximum_filter1d(y, size=2)
