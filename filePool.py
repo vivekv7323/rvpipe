@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import pandas as pd
 from astropy.io import fits
 from astropy.time import Time
 from astropy.timeseries import LombScargle
