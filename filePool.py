@@ -129,8 +129,9 @@ def load_ref_spectrum(path, telpath, wvlpath):
         for i in tqdm(range(len(startA)), desc="constructing telluric mask"):
                 big_mask |= ((wavelength>(startA[i]-0.4))&(wavelength<(endA[i]+0.4)))
 
+        # Open solar template to find modeled lines
         template = pd.read_csv("T1o2_spec-2.csv")
-
+        # shift from vacuum to air
         temp_w = template["wave"]*(1 - (83285/299792458))
         flux_w = template["flux"]
         tempmin = temp_w[find_peaks(np.nanmax(flux_w)-flux_w, distance=5,height=.1, prominence=.1)[0]]
@@ -198,6 +199,10 @@ def load_ref_spectrum(path, telpath, wvlpath):
 
         return wavelength, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask
 
+
+'''
+Process RV for a file
+'''
 class FileRV(object):
         def __init__(self, params):
                 self.params = params
@@ -246,7 +251,7 @@ class FileRV(object):
                         # Initialize arrays
                         rvord, rverror_ord, corrcoeff_ord, linewidth_ord = np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
                                                                                 ,np.zeros(len(minima[i]))
-
+                        # Measure line depth of Mn I 5394.47
                         if ((i==50) | (i==51)):
                                 mnbox = np.abs(wS[i][maxima[i]][np.argmin(np.abs(wS[i][maxima[i]] - 5394.7))] - 5394.7)
                                 relflux = fluxcont[(wS[i] > (5394.7-mnbox)) & (wS[i] < (5394.7+mnbox))]
@@ -255,6 +260,7 @@ class FileRV(object):
                         # iterate over lines in each order
                         for j in range(len(minima[i])):
 
+                                # get line windows, line minimum, indices, and line flux
                                 box = boxlist[i][j]
                                 linemin = wS[i][minima[i][j]]
                                 indices = np.where((wS[i] < (box+linemin)) & (wS[i] > (linemin-box)))
@@ -310,35 +316,44 @@ np.savez("refspectrum.npz", waveref, refspectrum)
 files = os.listdir('data')
 waveref, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask = load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits')
 
+# Create directory for npz output files
 if not os.path.exists('npz'):
         os.makedirs('npz')   
 
+# Parallel process files with args
 with Pool() as pool:
         output = np.asarray(pool.map(FileRV((csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask)), files))
 
+# flatten line minima array
 wavelines = np.concatenate([waveref[i][minima[i]] for i in range(len(minima))])
 
+# Open npz directory
 files = os.listdir('npz')
 
 avg_rverr_line = np.empty(shape=(len(files), len(wavelines)))
 
+# Get average rv error per line
 for i in range(len(files)):
         arrays = np.load('npz/'+files[i])
         avg_rverr_line[i] = arrays["arr_1"]
 avg_rverr_line = np.nanmean(avg_rverr_line, axis=0)
 
+# Creatte mask for duplicates
 dupmask = np.zeros(len(wavelines), dtype=bool)
 for i in range(len(wavelines)):
+        # Calculate difference between a line and the entire list to locate duplicates, within a 0.1 angstrom tolerance
         zL = np.abs(wavelines - wavelines[i])
         duplicates = np.where((zL < 0.1))[0]
         if (len(duplicates) > 1):
                 dupmask[duplicates[duplicates != duplicates[np.argmin(avg_rverr_line[duplicates])]]] = True
 dupmask[np.where(avg_rverr_line == np.nan)] = True
 
+# Flatten arrays, remove duplicates
 wavelines = wavelines[~dupmask]
 linedepth = np.concatenate(linedepth)[~dupmask]
 contdiff = np.concatenate(contdiff)[~dupmask]
 
+# arrays for just processing IR
 linedepthr = linedepth[wavelines > 7000]
 contdiffr = contdiff[wavelines > 7000]
 
@@ -348,6 +363,7 @@ meansr,means,error,neidrv,time,angle,numlines=np.zeros(len(files)),np.zeros(len(
 rvarrays = np.empty(shape=(len(files), len(wavelines)))
 rverr_arrays = np.empty(shape=(len(files), len(wavelines)))
 
+# Get high trend RVs in IR and neidrv, time, and solar altitude
 for i in tqdm(range(len(files)), desc="pearson correlation"):
 
         arrays = np.load('npz/'+files[i])
@@ -371,6 +387,7 @@ for i in tqdm(range(len(files)), desc="pearson correlation"):
         rvarrays[i] = rv
         rverr_arrays[i] = rverr
 
+# Calculate corr coeff for each line with respect to high trend lines for filtering
 pearsoncorr = np.zeros(len(rvarrays.T))
 
 for i in range(len(rvarrays.T)):
@@ -380,6 +397,7 @@ for i in range(len(rvarrays.T)):
         except:
                 pearsoncorr[i] = np.nan
 
+# Calculate bulk rv
 for i in range(len(files)):
         rv = rvarrays[i]
         rverr = rverr_arrays[i]
@@ -392,5 +410,6 @@ for i in range(len(files)):
         means[i] = np.sum(rv[cut]/(rverr[cut]**2))/np.sum(1/(rverr[cut]**2))
         error[i] = np.mean(rverr[cut])
 
+# Output rvs and calculated parameters
 np.savez("all_lines", rvarrays, rverr_arrays)
 np.savez("output_file", means, error, neidrv, time, angle, wavelines, contdiff, linedepth, output[:,0], output[:,1], numlines)
