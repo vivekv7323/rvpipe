@@ -126,8 +126,8 @@ def load_ref_spectrum(path, telpath, wvlpath):
 
         # create telluric mask using grouups
         big_mask = (wavelength<0)
-        for i in tqdm(range(len(startA)), desc="constructing telluric mask"):
-                big_mask |= ((wavelength>(startA[i]-0.4))&(wavelength<(endA[i]+0.4)))
+        for i in tqdm(range(len(start)), desc="constructing telluric mask"):
+                big_mask |= ((wavelength>(start[i]-0.4))&(wavelength<(end[i]+0.4)))
 
         # Open solar template to find modeled lines
         template = pd.read_csv("T1o2_spec-2.csv")
@@ -199,7 +199,6 @@ def load_ref_spectrum(path, telpath, wvlpath):
 
         return wavelength, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask
 
-
 '''
 Process RV for a file
 '''
@@ -249,8 +248,7 @@ class FileRV(object):
                         fluxcont = fS[i]/maximum_filter1d(np.where(np.isnan(fS[i]),-np.inf, fS[i]), size=1000)
                         errorCont = eS[i]/maximum_filter1d(np.where(np.isnan(fS[i]),-np.inf, fS[i]), size=1000)
                         # Initialize arrays
-                        rvord, rverror_ord, corrcoeff_ord, linewidth_ord = np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
-                                                                                ,np.zeros(len(minima[i]))
+                        rvord, rverror_ord, corrcoeff_ord, linewidth_ord = np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
                         # Measure line depth of Mn I 5394.47
                         if ((i==50) | (i==51)):
                                 mnbox = np.abs(wS[i][maxima[i]][np.argmin(np.abs(wS[i][maxima[i]] - 5394.7))] - 5394.7)
