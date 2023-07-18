@@ -303,7 +303,7 @@ class FileRV(object):
                         corrcoeff = np.concatenate((corrcoeff, corrcoeff_ord))
                         linewidth = np.concatenate((linewidth, linewidth_ord))
 
-                np.savez('npz/'+ file.name+"_rv", rv, rverror, corrcoeff, linewidth)
+                np.savez('npz/'+ file.name[:-4]+"_rv", rv, rverror, corrcoeff, linewidth)
                 #print("Processed", file)
                 return s_index, mn_linedepth*0.5
 
@@ -369,7 +369,7 @@ if __name__ == "__main__":
 
                 arrays = np.load(files[i])
 
-                hdul = fits.open('npz/'+files[i].name[-7]+".fits")
+                hdul = fits.open('npz/'+files[i].name[:-7]+".fits")
 
                 angle[i] = hdul[0].header['SUNAGL']
                 neidrv[i] = hdul[12].header['CCFrvMOD']*1000
