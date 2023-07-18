@@ -63,7 +63,7 @@ def fetch_single(path):
                 y[~np.isfinite(b)] = np.nan
                 e[~np.isfinite(e)] = np.nan
                 e[e<0] = np.nan
-                X.append( x ); Y.append( y/b ); E.append( np.sqrt(e)/b )
+                X.append( x ); Y.append( y/b ); E.append(e/b )
 
         # convert to numpy arrays
         X = np.array(X)
