@@ -1,4 +1,4 @@
-import os
+import pathlib
 import numpy as np
 import pandas as pd
 from astropy.io import fits
@@ -77,7 +77,7 @@ creates reference spectrum from files in path, and a wavelength reference
 def create_ref_spectrum(path, reference):
         
         # directory for all files
-        files = os.listdir(path)
+        files = list(pathlib.Path(path).glob('*.fits'))
 
         # get reference file
         waveref,flux,error = fetch_single(reference)
@@ -89,7 +89,7 @@ def create_ref_spectrum(path, reference):
         for k in tqdm(range(len(files)), desc="integrating reference"):
 
                 # get file
-                wavelength,flux,error = fetch_single(path + '/' + files[k])
+                wavelength,flux,error = fetch_single(files[k])
 
                 # normalize flux
                 for i in range(len(flux)):
@@ -208,7 +208,7 @@ class FileRV(object):
         def __call__(self, file):
                 csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask = self.params
                 # Currently working on single file, looping all files later
-                wS, fS, eS = fetch_single('data/'+file)
+                wS, fS, eS = fetch_single(file)
 
                 # Interpolate flux of reference to file
                 flux = np.vstack([csplines[i](wS[i]) for i in range(np.shape(wS)[0])])
@@ -302,7 +302,7 @@ class FileRV(object):
                         corrcoeff = np.concatenate((corrcoeff, corrcoeff_ord))
                         linewidth = np.concatenate((linewidth, linewidth_ord))
 
-                np.savez("npz"+'/'+ file[:-5]+"_rv", rv, rverror, corrcoeff, linewidth)
+                np.savez('npz/'+ file[:-5]+"_rv", rv, rverror, corrcoeff, linewidth)
                 #print("Processed", file)
                 return s_index, mn_linedepth*0.5
 
@@ -313,7 +313,7 @@ if __name__ == "__main__":
         np.savez("refspectrum.npz", waveref, refspectrum)
 
         # directory for all files
-        files = os.listdir('data')
+        files = list(pathlib.Path('data').glob('*.fits'))
         waveref, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask = load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits')
 
         # Create directory for npz output files
@@ -328,13 +328,13 @@ if __name__ == "__main__":
         wavelines = np.concatenate([waveref[i][minima[i]] for i in range(len(minima))])
 
         # Open npz directory
-        files = os.listdir('npz')
+        files = list(pathlib.Path('npz').glob('*.npz'))
 
         avg_rverr_line = np.empty(shape=(len(files), len(wavelines)))
 
         # Get average rv error per line
         for i in range(len(files)):
-                arrays = np.load('npz/'+files[i])
+                arrays = np.load(files[i])
                 avg_rverr_line[i] = arrays["arr_1"]
         avg_rverr_line = np.nanmean(avg_rverr_line, axis=0)
 
@@ -366,9 +366,9 @@ if __name__ == "__main__":
         # Get high trend RVs in IR and neidrv, time, and solar altitude
         for i in tqdm(range(len(files)), desc="pearson correlation"):
 
-                arrays = np.load('npz/'+files[i])
+                arrays = np.load(files[i])
 
-                hdul = fits.open('data/'+files[i][:-7]+".fits")
+                hdul = fits.open(files[i][:-7]+".fits")
 
                 angle[i] = hdul[0].header['SUNAGL']
                 neidrv[i] = hdul[12].header['CCFrvMOD']*1000
