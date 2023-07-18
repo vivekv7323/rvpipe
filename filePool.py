@@ -369,7 +369,7 @@ if __name__ == "__main__":
 
                 arrays = np.load(files[i])
 
-                hdul = fits.open('npz/'+files[i].name+".fits")
+                hdul = fits.open('npz/'+files[i].name[-7]+".fits")
 
                 angle[i] = hdul[0].header['SUNAGL']
                 neidrv[i] = hdul[12].header['CCFrvMOD']*1000
