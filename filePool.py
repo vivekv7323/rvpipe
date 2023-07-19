@@ -352,7 +352,7 @@ if __name__ == "__main__":
                 avg_rverr_line[i] = arrays["arr_1"]
         avg_rverr_line = np.nanmean(avg_rverr_line, axis=0)
 
-        # Creatte mask for duplicates
+        # Create mask for duplicates
         dupmask = np.zeros(len(wavelines), dtype=bool)
         for i in range(len(wavelines)):
                 # Calculate difference between a line and the entire list to locate duplicates, within a 0.1 angstrom tolerance
@@ -367,10 +367,6 @@ if __name__ == "__main__":
         linedepth = np.concatenate(linedepth)[~dupmask]
         contdiff = np.concatenate(contdiff)[~dupmask]
         temperatures = np.concatenate(temperatures)[~dupmask]
-
-        # arrays for just processing IR
-        linedepthr = linedepth[wavelines > 7000]
-        contdiffr = contdiff[wavelines > 7000]
 
         # initialize other arrays
         meansr,means,error,neidrv,time,angle,numlines=np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files))
