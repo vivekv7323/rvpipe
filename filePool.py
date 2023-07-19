@@ -133,9 +133,10 @@ def load_ref_spectrum(path, telpath, wvlpath):
         # Open solar template to find modeled lines
         template = pd.read_csv("T1o2_spec-2.csv")
         # shift from vacuum to air
-        temp_w = template["wave"]*(1 - (83285/299792458))
+        wave_w = template["wave"]*(1 - (83285/299792458))
         flux_w = template["flux"]
-        tempmin = temp_w[find_peaks(np.nanmax(flux_w)-flux_w, distance=5,height=.1, prominence=.1)[0]]
+        temp_w = template["T1o2"]
+        tempmin = wave_w[find_peaks(np.nanmax(flux_w)-flux_w, distance=5,height=.1, prominence=.1)[0]]
 
         '''
         Get local minima for absorption lines, get cubic spline model,       
@@ -153,6 +154,7 @@ def load_ref_spectrum(path, telpath, wvlpath):
         contdiff = []
         linedepth = []
         templatemask = []
+        temperatures = []
 ##        masscenter = []
 ##        smallwindow = []
 ##        jerkdistance = []
@@ -164,9 +166,8 @@ def load_ref_spectrum(path, telpath, wvlpath):
         for i in tqdm(range(len(minima)),desc="creating line windows"):
                 
                 #, massCenterOrd, swOrd, jDOrd, bisectorOrd, numMaximaOrd,
-                contdiff_ord, linedepth_ord, boxord, templateord = np.zeros(len(minima[i])), np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
-                   #np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
-                
+                contdiff_ord, linedepth_ord, boxord, templateord, temperatureord = np.zeros(len(minima[i])), np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
+                                   
                 for j in range(len(minima[i])):
 
                         # Get location of line peak
@@ -189,16 +190,22 @@ def load_ref_spectrum(path, telpath, wvlpath):
                         contdiff_ord[j] = np.abs(othermax_ord - flux[i][maxima[i][nearestmaxindex]])
 
                         # box around window
-                        boxord[j] = np.abs(wavelength[i][maxima[i][nearestmaxindex]] - wavelength[i][minima[i][j]])
+                        box = np.abs(wavelength[i][maxima[i][nearestmaxindex]] - wavelength[i][minima[i][j]])
+                        boxord[j] = box
 
+                        # avg temperature
+                        temperatureord[j] = np.mean(temp_w[(wave_w > (lineMin-box)) & (wave_w < (lineMin+box))])
+
+                        # line depth
                         linedepth_ord[j] = 1 - 2*flux[i][minima[i][j]]/(othermax_ord+flux[i][maxima[i][nearestmaxindex]])
 
                 contdiff.append(contdiff_ord)
                 boxlist.append(boxord)
                 linedepth.append(linedepth_ord)
                 templatemask.append(templateord)
-
-        return wavelength, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask
+                temperatures.append(temperatureord)
+                
+        return wavelength, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask, temperatures
 
 '''
 Process RV for a file
@@ -315,7 +322,8 @@ if __name__ == "__main__":
 
         # directory for all files
         files = list(pathlib.Path('data').glob('*.fits'))
-        waveref, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask = load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits')
+        waveref, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask, temperatures =\
+                 load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits')
 
         # Create directory for npz output files
         if not os.path.exists('npz'):
@@ -353,6 +361,7 @@ if __name__ == "__main__":
         wavelines = wavelines[~dupmask]
         linedepth = np.concatenate(linedepth)[~dupmask]
         contdiff = np.concatenate(contdiff)[~dupmask]
+        temperatures = np.concatenate(temperature)[~dupmask]
 
         # arrays for just processing IR
         linedepthr = linedepth[wavelines > 7000]
@@ -363,6 +372,7 @@ if __name__ == "__main__":
 
         rvarrays = np.empty(shape=(len(files), len(wavelines)))
         rverr_arrays = np.empty(shape=(len(files), len(wavelines)))
+        line_search = np.empty(shape=(len(files), len(wavelines)))
 
         # Get high trend RVs in IR and neidrv, time, and solar altitude
         for i in tqdm(range(len(files)), desc="pearson correlation"):
@@ -372,7 +382,7 @@ if __name__ == "__main__":
                 hdul = fits.open('data/'+files[i].name[:-7]+".fits")
 
                 angle[i] = hdul[0].header['SUNAGL']
-                neidrv[i] = hdul[12].header['CCFrvMOD']*1000
+                neidrv[i] = hdul[12].header['CCFRVMOD']*1000
                 time[i] = hdul[12].header['CCFJDMOD']
 
                 rv = arrays["arr_0"][~dupmask]
@@ -385,14 +395,18 @@ if __name__ == "__main__":
                         (np.abs(rvred - np.nanmean(rvred)) < 3*np.nanstd(rvred)))
                 meansr[i] = np.sum(rvred[cutr]/(rverr_red[cutr]**2))/np.sum(1/(rverr_red[cutr]**2))
 
+                line_search[i][(rverr < 3*np.nanmean(rverr)) & (np.abs(rv - np.nanmean(rv)) < 3*np.nanstd(rv))] = 1
+                
                 rvarrays[i] = rv
                 rverr_arrays[i] = rverr
 
         # Calculate corr coeff for each line with respect to high trend lines for filtering
-        pearsoncorr = np.zeros(len(rvarrays.T))
+        pearsoncorr, perline = np.zeros(len(rvarrays.T)),np.zeros(len(rvarrays.T))
 
         for i in range(len(rvarrays.T)):
                 line = rvarrays.T[i]
+                filelist = line_search[:,i]
+                perline[i] = len(filelist[filelist == 1])/len(filelist)
                 try:
                         pearsoncorr[i] = pearsonr(meansr[~np.isnan(line)], line[~np.isnan(line)])[0]
                 except:
@@ -404,7 +418,7 @@ if __name__ == "__main__":
                 rverr = rverr_arrays[i]
 
                 cut = np.where((rverr < 3*np.nanmean(rverr)) &
-                (np.abs(rv - np.nanmean(rv)) < 3*np.nanstd(rv))& (np.abs(pearsoncorr) < 0.5))
+                (np.abs(rv - np.nanmean(rv)) < 3*np.nanstd(rv))& (np.abs(pearsoncorr) < 0.5) & (perline > 0.01))
 
                 numlines[i] = len(rv[cut])
 
@@ -413,4 +427,4 @@ if __name__ == "__main__":
 
         # Output rvs and calculated parameters
         np.savez("all_lines", rvarrays, rverr_arrays)
-        np.savez("output_file", means, error, neidrv, time, angle, wavelines, contdiff, linedepth, output[:,0], output[:,1], numlines)
+        np.savez("output_file", means, error, neidrv, time, angle, wavelines, contdiff, linedepth, temperatures, output[:,0], output[:,1], pearsonCorr, perline, numlines)
