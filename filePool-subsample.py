@@ -277,7 +277,7 @@ class FileRV(object):
                                 indices = np.where((wS[i] < (box+linemin)) & (wS[i] > (linemin-box)))
                                 fluxspec = fluxcont[indices]
                                 # minimum pixel length of window
-                                if ((len(indices[0]) > 10) & (len(indices[0]) < 100) & (~np.isnan(linemin)) & (~np.isnan(fluxspec).any()) & (linedepth[i][j] > 0.005) & (contdiff[i][j] < 0.05)
+                                if ((len(indices[0]) > 10) & (len(indices[0]) < 100) & (~np.isnan(fluxspec).any()) & (~np.isnan(linemin)) & (linedepth[i][j] > 0.005) & (contdiff[i][j] < 0.05)
                                     & (templatemask[i][j] == True)):
                                         # get wavelength of interpolated target spectrum in the window
                                         waveline = wS[i][indices]
@@ -321,34 +321,40 @@ class FileRV(object):
 
 if __name__ == "__main__":
 
-        waveref, refspectrum = create_ref_spectrum('data', 'data/neidL2_20220323T163236.fits')
-        # Save reference spectrum
-        np.savez("refspectrum.npz", waveref, refspectrum)
+##        waveref, refspectrum = create_ref_spectrum('data', 'data/neidL2_20220323T163236.fits')
+##        # Save reference spectrum
+##        np.savez("refspectrum.npz", waveref, refspectrum)
 
-        # directory for all files
-        files = list(pathlib.Path('data').glob('*.fits'))
         waveref, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask, temperatures =\
                  load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits')
 
+        # directory for all files
+        files = list(pathlib.Path('data').glob('*.fits'))
+        sindices, mndepth = np.zeros(len(files)),np.zeros(len(files))
+        subsample = np.sort(np.random.choice(files, size=100, replace=False))
+        subind = np.isin(files, subsample)
+        
         # Create directory for npz output files
         if not os.path.exists('npz'):
                 os.makedirs('npz')   
 
         # Parallel process files with args
         with Pool() as pool:
-                output = np.asarray(pool.map(FileRV((csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask)), files))
-
+                        output = np.asarray(pool.map(FileRV((csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask)), subsample))
+        sindices[subind] = output[:,0]
+        mndepth[subind] = output[:,1]
+        
         # flatten line minima array
         wavelines = np.concatenate(minima)
 
         # Open npz directory
-        files = list(pathlib.Path('npz').glob('*.npz'))
+        subsamplenpz = list(pathlib.Path('npz').glob('*.npz'))
 
-        avg_rverr_line = np.empty(shape=(len(files), len(wavelines)))
+        avg_rverr_line = np.empty(shape=(len(subsamplenpz), len(wavelines)))
 
         # Get average rv error per line
-        for i in range(len(files)):
-                arrays = np.load(files[i])
+        for i in range(len(subsamplenpz)):
+                arrays = np.load(subsamplenpz[i])
                 avg_rverr_line[i] = arrays["arr_1"]
         avg_rverr_line = np.nanmean(avg_rverr_line, axis=0)
 
@@ -373,22 +379,16 @@ if __name__ == "__main__":
         contdiffr = contdiff[wavelines > 7000]
 
         # initialize other arrays
-        meansr,means,error,neidrv,time,angle,numlines=np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files))
+        meansr = np.zeros(len(subsamplenpz))
 
-        rvarrays = np.empty(shape=(len(files), len(wavelines)))
-        rverr_arrays = np.empty(shape=(len(files), len(wavelines)))
-        line_search = np.empty(shape=(len(files), len(wavelines)))
+        rvsub = np.empty(shape=(len(subsamplenpz), len(wavelines)))
+        rverr_sub = np.empty(shape=(len(subsamplenpz), len(wavelines)))
+        line_search = np.empty(shape=(len(subsamplenpz), len(wavelines)))
 
         # Get high trend RVs in IR and neidrv, time, and solar altitude
-        for i in tqdm(range(len(files)), desc="pearson correlation"):
+        for i in tqdm(range(len(subsamplenpz)), desc="pearson correlation"):
 
-                arrays = np.load(files[i])
-
-                hdul = fits.open('data/'+files[i].name[:-7]+".fits")
-
-                angle[i] = hdul[0].header['SUNAGL']
-                neidrv[i] = hdul[12].header['CCFRVMOD']*1000
-                time[i] = hdul[12].header['CCFJDMOD']
+                arrays = np.load(subsamplenpz[i])
 
                 rv = arrays["arr_0"][~dupmask]
                 rverr = arrays["arr_1"][~dupmask]
@@ -401,35 +401,62 @@ if __name__ == "__main__":
                 meansr[i] = np.sum(rvred[cutr]/(rverr_red[cutr]**2))/np.sum(1/(rverr_red[cutr]**2))
 
                 line_search[i][(rverr < 3*np.nanmean(rverr)) & (np.abs(rv - np.nanmean(rv)) < 3*np.nanstd(rv))] = 1
-                
-                rvarrays[i] = rv
-                rverr_arrays[i] = rverr
+    
+                rvsub[i] = rv
+                rverr_sub[i] = rverr
 
         # Calculate corr coeff for each line with respect to high trend lines for filtering
-        pearsoncorr, perline = np.zeros(len(rvarrays.T)),np.zeros(len(rvarrays.T))
+        pearsoncorr,perline = np.zeros(len(rvsub.T)),np.zeros(len(rvsub.T))
 
-        for i in range(len(rvarrays.T)):
-                line = rvarrays.T[i]
+        for i in range(len(rvsub.T)):
+                line = rvsub.T[i]
                 filelist = line_search[:,i]
                 perline[i] = len(filelist[filelist == 1])/len(filelist)
                 try:
                         pearsoncorr[i] = pearsonr(meansr[~np.isnan(line)], line[~np.isnan(line)])[0]
                 except:
                         pearsoncorr[i] = np.nan
+                        
+        rvsubavg = np.nanmean(rvsub, axis=0)
+        rverr_subavg = np.nanmean(rverr_sub, axis=0)
+        cut = np.where((rverr_subavg < 3*np.nanmean(rverr_subavg)) & (np.abs(rvsubavg - np.nanmean(rvsubavg)) < 3*np.nanstd(rvsubavg))&
+                       (np.abs(pearsoncorr) < 0.5) & (perline > 0.01))
+        print(minima)
+        print(~np.isin(minima, wavelines[cut]))
+        minima[~np.isin(minima, wavelines[cut])] = np.nan
+        
+        # Parallel process files with args
+        with Pool() as pool:
+                        output = np.asarray(pool.map(FileRV((csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask)), files[~subind]))
+        sindices[~subind] = output[:,0]
+        mndepth[~subind] = output[:,1]
 
+        fullnpz = list(pathlib.Path('npz').glob('*.npz'))
+        
+        means,error,neidrv,time,angle,numlines = np.zeros(len(fullnpz)),np.zeros(len(fullnpz)),np.zeros(len(fullnpz)),np.zeros(len(fullnpz)),np.zeros(len(fullnpz)),np.zeros(len(fullnpz))
+        rvarrays = np.empty(shape=(len(fullnpz), len(wavelines)))
+        rverr_arrays = np.empty(shape=(len(fullnpz), len(wavelines)))
+        
         # Calculate bulk rv
-        for i in range(len(files)):
-                rv = rvarrays[i]
-                rverr = rverr_arrays[i]
+        for i in range(len(fullnpz)):
+                
+                hdul = fits.open('data/'+fullnpz[i].name[:-7]+".fits")
 
-                cut = np.where((rverr < 3*np.nanmean(rverr)) &
-                (np.abs(rv - np.nanmean(rv)) < 3*np.nanstd(rv))& (np.abs(pearsoncorr) < 0.5) & (perline > 0.01))
+                rv = arrays["arr_0"][cut]
+                rverr = arrays["arr_1"][cut]
 
-                numlines[i] = len(rv[cut])
+                angle[i] = hdul[0].header['SUNAGL']
+                neidrv[i] = hdul[12].header['CCFRVMOD']*1000
+                time[i] = hdul[12].header['CCFJDMOD']  
 
-                means[i] = np.sum(rv[cut]/(rverr[cut]**2))/np.sum(1/(rverr[cut]**2))
-                error[i] = np.mean(rverr[cut])
+                rvarrays[i] = rv
+                rverr_arrays[i] = rverr
+
+                numlines[i] = len(rv)
+
+                means[i] = np.sum(rv/(rverr**2))/np.sum(1/(rverr**2))
+                error[i] = np.mean(rverr)
 
         # Output rvs and calculated parameters
         np.savez("all_lines", rvarrays, rverr_arrays)
-        np.savez("output_file", means, error, neidrv, time, angle, wavelines, contdiff, linedepth, temperatures, output[:,0], output[:,1], pearsoncorr, perline, numlines)
+        np.savez("output_file", means, error, neidrv, time, angle, wavelines, contdiff, linedepth, temperatures, sindices, mndepth, pearsoncorr, perline, numlines)
