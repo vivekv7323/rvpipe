@@ -2,6 +2,7 @@ import os
 import pathlib
 import numpy as np
 import pandas as pd
+import argparser as ap
 from astropy.io import fits
 from astropy.time import Time
 from astropy.timeseries import LombScargle
@@ -104,7 +105,7 @@ def create_ref_spectrum(path, reference):
 '''
 load reference spectrum, create telluric mask and line windows
 '''
-def load_ref_spectrum(path, telpath, wvlpath):
+def load_ref_spectrum(path, telpath, wvlpath, maskstrength):
 
         # Open telluric template
         y = fits.open(telpath)[0].data        
@@ -112,7 +113,7 @@ def load_ref_spectrum(path, telpath, wvlpath):
 
         # smooth out a bit to get rid of continuum
         y = y/maximum_filter1d(y, size=2)
-        mask = np.where((np.abs(y-1) > 1e-4))[0]
+        mask = np.where((np.abs(y-1) > (10**(-maskstrength))))[0]
 
         # create groups
         start = x[mask[np.where(np.diff(mask) != 1)]]
@@ -321,23 +322,42 @@ class FileRV(object):
 
 if __name__ == "__main__":
 
-        waveref, refspectrum = create_ref_spectrum('data', 'data/neidL2_20220323T163236.fits')
-        # Save reference spectrum
-        np.savez("refspectrum.npz", waveref, refspectrum)
+        parser = ap.ArgumentParser(prog="Process spectra",description="")
+
+        parser.add_argument('filename')
+        parser.add_argument('-c', '--cpucount')
+        parser.add_argument('-t', '--telluricmask')
+        parser.add_argument('-i', '--noint', action='store_true',
+                            help="turn off reference spectrum integration")
+
+        args = parser.parse_args()
+
+        if args.telluricmask == None:
+                args.telluricmask = 4
+        
+        if not args.noint:
+
+                waveref, refspectrum = create_ref_spectrum('data', str(args.filename))
+                # Save reference spectrum
+                np.savez("refspectrum.npz", waveref, refspectrum)
 
         # directory for all files
         files = list(pathlib.Path('data').glob('*.fits'))
         waveref, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask, temperatures =\
-                 load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits')
+                 load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits', args.telluricmask)
 
         # Create directory for npz output files
         if not os.path.exists('npz'):
-                os.makedirs('npz')   
+                os.makedirs('npz')
 
         # Parallel process files with args
-        with Pool() as pool:
-                output = np.asarray(pool.map(FileRV((csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask)), files))
-
+        if args.cpucount == None:
+                pool = Pool()
+        else:
+                pool = Pool(args.cpucount)
+                        
+        output = np.asarray(pool.map(FileRV((csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask)), files))
+                              
         # flatten line minima array
         wavelines = np.concatenate(minima)
 
