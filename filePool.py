@@ -2,7 +2,7 @@ import os
 import pathlib
 import numpy as np
 import pandas as pd
-import argparser as ap
+import argparse as ap
 from astropy.io import fits
 from astropy.time import Time
 from astropy.timeseries import LombScargle
@@ -333,6 +333,7 @@ if __name__ == "__main__":
         args = parser.parse_args()
 
         if args.telluricmask == None:
+                print("defaulting to telluric mask strength of 1e-4")
                 args.telluricmask = 4
         
         if not args.noint:
@@ -344,7 +345,7 @@ if __name__ == "__main__":
         # directory for all files
         files = list(pathlib.Path('data').glob('*.fits'))
         waveref, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask, temperatures =\
-                 load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits', args.telluricmask)
+                 load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits', int(args.telluricmask))
 
         # Create directory for npz output files
         if not os.path.exists('npz'):
@@ -352,9 +353,10 @@ if __name__ == "__main__":
 
         # Parallel process files with args
         if args.cpucount == None:
+                print("using default Pool")
                 pool = Pool()
         else:
-                pool = Pool(args.cpucount)
+                pool = Pool(int(args.cpucount))
                         
         output = np.asarray(pool.map(FileRV((csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask)), files))
                               
