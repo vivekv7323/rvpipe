@@ -1,11 +1,11 @@
 # rvpipe
 ## A command-line pipeline for fast line-by-line rv processing of NEID solar spectra.
 
-##Required files: 
-- Line temperature table ("T1o2_spec-2.csv")
-- Telluric line template ("TAPAS_WMKO_NORAYLEIGH_SPEC.fits", TAPAS_WMKO_NORAYLEIGH_WVL.fits)
+## Required files: 
+- Line temperature table (`"T1o2_spec-2.csv"`)
+- Telluric line template (`"TAPAS_WMKO_NORAYLEIGH_SPEC.fits"`, `"TAPAS_WMKO_NORAYLEIGH_WVL.fits"`)
 
-##Arguments:
+## Arguments:
 
 `python3 rvpipe.py ["target file directory"] [-c] [cpu count] [-t] [telluric mask strength] [-i]`
 
@@ -15,11 +15,11 @@
 
 `[-t] [telluric mask strength]`: Specify telluric mask strength as a fraction of line depth (default = 1e-4)
 
-`[-i]`: Disable automatic creation of reference spectrum ("refspectrum.npz") if one already exists from a previous run
+`[-i]`: Disable automatic creation of reference spectrum (`"refspectrum.npz"`) if one already exists from a previous run
 
-##Outputs:
+## Outputs:
 
-`"all_lines.npz"`: Contains two numpy arrays, arr_0 being an array of rvs for each file and line in the format [file, line], arr_1 being the corresponding errors
+`"all_lines.npz"`: Contains two numpy arrays, `arr_0` being an array of rvs for each file and line in the format `[file, line]`, `arr_1` being the corresponding errors
 `"output_file.npz"`: Contains 14 numpy arrays.
 - arr_0: mean RV for each file
 - arr_1: RV error for each file
@@ -36,6 +36,6 @@
 - arr_12: Percent of files utilizing a given line (line diagnostic)
 - arr_13: Number of lines used for each file
 
-##Other files:
+## Other files:
 
 `"postprocess.ipynb"`: Jupiter notebook for post processing Outputs
