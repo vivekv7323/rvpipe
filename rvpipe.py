@@ -324,26 +324,28 @@ if __name__ == "__main__":
 
         parser = ap.ArgumentParser(prog="Process spectra",description="")
 
-        parser.add_argument('filename')
-        parser.add_argument('-c', '--cpucount')
-        parser.add_argument('-t', '--telluricmask')
+        parser.add_argument('filedir', help="file directory for target files")
+        parser.add_argument('-c', '--cpucount', help="specify number of cpus to use")
+        parser.add_argument('-t', '--telluricmask',
+                            help="specify telluric mask strength as a fraction of line depth (default = 1e-4)")
         parser.add_argument('-i', '--noint', action='store_true',
-                            help="turn off reference spectrum integration")
+                            help="disable automatic creation of reference spectrum if one already exists")
 
         args = parser.parse_args()
 
         if args.telluricmask == None:
                 print("defaulting to telluric mask strength of 1e-4")
                 args.telluricmask = 4
+                
+        # directory for all files
+        files = list(pathlib.Path(str(args.filedir)).glob('*.fits'))
         
         if not args.noint:
 
-                waveref, refspectrum = create_ref_spectrum('data', str(args.filename))
+                waveref, refspectrum = create_ref_spectrum(str(args.filedir), files[0])
                 # Save reference spectrum
                 np.savez("refspectrum.npz", waveref, refspectrum)
 
-        # directory for all files
-        files = list(pathlib.Path('data').glob('*.fits'))
         waveref, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask, temperatures =\
                  load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits', int(args.telluricmask))
 
@@ -402,7 +404,7 @@ if __name__ == "__main__":
 
                 arrays = np.load(files[i])
 
-                hdul = fits.open('data/'+files[i].name[:-7]+".fits")
+                hdul = fits.open(str(args.filedir)+files[i].name[:-7]+".fits")
 
                 angle[i] = hdul[0].header['SUNAGL']
                 neidrv[i] = hdul[12].header['CCFRVMOD']*1000
