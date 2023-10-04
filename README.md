@@ -13,9 +13,11 @@
 
 `[-c] [cpu count]`: Specify number of cpus to use (default is all available)
 
-`[-t] [telluric mask strength]`: Specify telluric mask strength as a fraction of line depth (default = 1e-4)
+`[-t] [telluric mask strength]`: Specify telluric mask strength as a fraction of line depth (default = 4 (1e-4))
 
 `[-i]`: Disable automatic creation of reference spectrum (`"refspectrum.npz"`) if one already exists from a previous run
+
+Example: `python3 rvpipe.py 'data' -c 6 -t 5 -i`
 
 ## Outputs:
 
@@ -38,4 +40,4 @@
 
 ## Other files:
 
-`"postprocess.ipynb"`: Jupiter notebook for post processing Outputs
+`"postprocess.ipynb"`: Jupiter notebook for post processing outputs
