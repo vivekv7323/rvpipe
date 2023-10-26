@@ -105,7 +105,7 @@ def create_ref_spectrum(path, reference):
 '''
 load reference spectrum, create telluric mask and line windows
 '''
-def load_ref_spectrum(path, telpath, wvlpath, maskstrength):
+def load_ref_spectrum(path, telpath, wvlpath, maskstrength, minwl, maxwl):
 
         # Open telluric template
         y = fits.open(telpath)[0].data        
@@ -125,6 +125,9 @@ def load_ref_spectrum(path, telpath, wvlpath, maskstrength):
         result = np.load(path)
         wavelength = result["arr_0"]
         flux = result["arr_1"]
+
+        wavelength = wavelength[(wavelength>minwl) & (wavelength<maxwl)]
+        flux = wavelength[(wavelength>minwl) & (wavelength<maxwl)]
 
         # create telluric mask using grouups
         big_mask = (wavelength<0)
@@ -220,8 +223,8 @@ class FileRV(object):
         def __init__(self, params):
                 self.params = params
         def __call__(self, file):
-                csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask = self.params
-                # Currently working on single file, looping all files later
+                csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask, filterpars = self.params
+                
                 wS, fS, eS = fetch_single(file)
 
                 # Interpolate flux of reference to file
@@ -278,7 +281,7 @@ class FileRV(object):
                                 indices = np.where((wS[i] < (box+linemin)) & (wS[i] > (linemin-box)))
                                 fluxspec = fluxcont[indices]
                                 # minimum pixel length of window
-                                if ((len(indices[0]) > 10) & (len(indices[0]) < 100) & (~np.isnan(linemin)) & (~np.isnan(fluxspec).any()) & (linedepth[i][j] > 0.005) & (contdiff[i][j] < 0.05)
+                                if ((len(indices[0]) > filterpars[0]) & (len(indices[0]) < filterpars[1]) & (~np.isnan(linemin)) & (~np.isnan(fluxspec).any()) & (linedepth[i][j] > filterpars[2]) & (contdiff[i][j] < filterpars[3])
                                     & (templatemask[i][j] == True)):
                                         # get wavelength of interpolated target spectrum in the window
                                         waveline = wS[i][indices]
@@ -328,6 +331,18 @@ if __name__ == "__main__":
         parser.add_argument('-c', '--cpucount', help="specify number of cpus to use")
         parser.add_argument('-t', '--telluricmask',
                             help="specify telluric mask strength as a fraction of line depth (default = 1e-4)")
+        parser.add_argument('-w', '--minwavelength',
+                            help="specify minimum wavelength to use for analysis in angstroms")
+        parser.add_argument('-m', '--maxwavelength',
+                            help="specify maximum wavelength to use for analysis in angstroms")
+        parser.add_argument('-n', '--minlinewidth',
+                            help="specify minimum line width in pixels")
+        parser.add_argument('-x', '--maxlinewidth',
+                            help="specify maximum line width in pixels")
+        parser.add_argument('-l', '--minlinedepth',
+                            help="specify minimum line depth")
+        parser.add_argument('-d', '--maxcontdiff',
+                            help="specify maximum continuum difference")
         parser.add_argument('-i', '--noint', action='store_true',
                             help="disable automatic creation of reference spectrum if one already exists")
 
@@ -336,6 +351,25 @@ if __name__ == "__main__":
         if args.telluricmask == None:
                 print("defaulting to telluric mask strength of 1e-4")
                 args.telluricmask = 4
+        if args.minwavelength == None:
+                print("defaulting to no minimum wavelength")
+                args.minwavelength = 0
+        if args.maxwavelength == None:
+                print("defaulting to maximum wavelength of 7000A")
+                args.maxwavelength = 7000
+        if args.minlinewidth == None:
+                print("defaulting to minimum line width of 10 pixels")
+                args.minlinewidth = 10
+        if args.maxlinewidth == None:
+                print("defaulting to maximum line width of 100 pixels")
+                args.maxlinewidth = 100
+        if args.minlinedepth == None:
+                print("defaulting to minimum line depth of 0.005")
+                args.minlinedepth = 0.005
+        if args.maxcontdiff == None:
+                print("defaulting to maximum continuum difference of 0.05")
+                args.maxcontdiff = 0.05
+        filterpars = [int(args.minlinewidth), int(args.maxlinewidth), int(args.minlinedepth), int(args.maxcontdiff)]
                 
         # directory for all files
         files = list(pathlib.Path(str(args.filedir)).glob('*.fits'))
@@ -347,7 +381,8 @@ if __name__ == "__main__":
                 np.savez("refspectrum.npz", waveref, refspectrum)
 
         waveref, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask, temperatures =\
-                 load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits', 'TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits', int(args.telluricmask))
+                 load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits','TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits',
+                                   int(args.telluricmask),int(args.minwavelength),int(args.maxwavelength))
 
         # Create directory for npz output files
         if not os.path.exists('npz'):
@@ -360,7 +395,7 @@ if __name__ == "__main__":
         else:
                 pool = Pool(int(args.cpucount))
                         
-        output = np.asarray(pool.map(FileRV((csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask)), files))
+        output = np.asarray(pool.map(FileRV((csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask, filterpars)), files))
                               
         # flatten line minima array
         wavelines = np.concatenate(minima)
@@ -452,4 +487,4 @@ if __name__ == "__main__":
 
         # Output rvs and calculated parameters
         np.savez("all_lines", rvarrays, rverr_arrays)
-        np.savez("output_file", means, error, neidrv, time, angle, wavelines, contdiff, linedepth, temperatures, output[:,0], output[:,1], pearsoncorr, perline, numlines)
+        np.savez("output_file", means, error, neidrv, time, angle, wavelines, contdiff, linedepth, temperatures, output[:,0], output[:,1], pearsoncorr, perline, numlines, args)
