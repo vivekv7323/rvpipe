@@ -256,6 +256,8 @@ class FileRV(object):
                 rverror = []
                 corrcoeff = []
                 linewidth = []
+                pixelindices = []
+                linedepthline = []
                 mn_linedepth = 0
 
                 # calculate rvs for each order
@@ -265,7 +267,8 @@ class FileRV(object):
                         fluxcont = fS[i]/maximum_filter1d(np.where(np.isnan(fS[i]),-np.inf, fS[i]), size=1000)
                         errorCont = eS[i]/maximum_filter1d(np.where(np.isnan(fS[i]),-np.inf, fS[i]), size=1000)
                         # Initialize arrays
-                        rvord, rverror_ord, corrcoeff_ord, linewidth_ord = np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
+                        rvord, rverror_ord, corrcoeff_ord, linewidth_ord, pixelindices_ord, linedepth_ord = np.zeros(len(minima[i])),
+                        np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
                         # Measure line depth of Mn I 5394.47
                         if ((i==50) | (i==51)):
                                 mnbox = np.abs(wS[i][maxima[i]][np.argmin(np.abs(wS[i][maxima[i]] - 5394.7))] - 5394.7)
@@ -279,6 +282,7 @@ class FileRV(object):
                                 box = boxlist[i][j]
                                 linemin = minima[i][j]
                                 indices = np.where((wS[i] < (box+linemin)) & (wS[i] > (linemin-box)))
+                                pixelindices_ord[j] = indices[0]
                                 fluxspec = fluxcont[indices]
                                 # minimum pixel length of window
                                 if ((len(indices[0]) > filterpars[0]) & (len(indices[0]) < filterpars[1]) & (~np.isnan(linemin)) & (~np.isnan(fluxspec).any()) & (linedepth[i][j] > filterpars[2]) & (contdiff[i][j] < filterpars[3])
@@ -289,6 +293,7 @@ class FileRV(object):
                                         halfmax = 0.5*(np.min(fluxspec)+np.max(fluxspec))
                                         linewidth_ord[j] = np.abs(waveline[waveline < linemin][np.argmin(np.abs(fluxspec[waveline < linemin] - halfmax))] -
                                                         waveline[waveline > linemin][np.argmin(np.abs(fluxspec[waveline > linemin] - halfmax))])
+                                        linedepth_ord[j] = 1 - 2*fluxspec[linemin]/(fluxspec[0]+fluxspec[-1])
                                         # try/except linear regression
                                         location = ~np.isnan(flux[i][indices]) & ~np.isnan(fluxspec)
                                         # linear least-squares regression
@@ -314,12 +319,16 @@ class FileRV(object):
                                         rverror_ord[j] = np.nan
                                         corrcoeff_ord[j] = np.nan
                                         linewidth_ord[j] = np.nan
+                                        pixelindices_ord[j] = np.nan
+                                        linedepth_ord[j] = np.nan
                         rv = np.concatenate((rv, rvord))
                         rverror = np.concatenate((rverror, rverror_ord))
                         corrcoeff = np.concatenate((corrcoeff, corrcoeff_ord))
                         linewidth = np.concatenate((linewidth, linewidth_ord))
+                        pixelindices = np.concatenate((pixelindices, pixelindices_ord))
+                        linedepthline = np.concatenate((linedepthline, linedepth_ord))
 
-                np.savez('npz/'+ file.name[:-5]+"_rv", rv, rverror, corrcoeff, linewidth)
+                np.savez('npz/'+ file.name[:-5]+"_rv", rv, rverror, corrcoeff, linewidth, pixelindices, linedepthline)
                 #print("Processed", file)
                 return s_index, mn_linedepth*0.5
 
@@ -355,7 +364,7 @@ if __name__ == "__main__":
                 print("defaulting to no minimum wavelength")
                 args.minwavelength = 0
         if args.maxwavelength == None:
-                print("defaulting to maximum wavelength of 7000A")
+                print("defaulting to maximum wavelength of 7000 Å")
                 args.maxwavelength = 7000
         if args.minlinewidth == None:
                 print("defaulting to minimum line width of 10 pixels")
@@ -432,6 +441,10 @@ if __name__ == "__main__":
 
         rvarrays = np.empty(shape=(len(files), len(wavelines)))
         rverr_arrays = np.empty(shape=(len(files), len(wavelines)))
+        corr_arrays = np.empty(shape=(len(files), len(wavelines)))
+        width_arrays = np.empty(shape=(len(files), len(wavelines)))
+        ind_arrays = np.empty(shape=(len(files), len(wavelines)))
+        depth_arrays = np.empty(shape=(len(files), len(wavelines)))
         line_search = np.empty(shape=(len(files), len(wavelines)))
 
         # Get high trend RVs in IR and neidrv, time, and solar altitude
@@ -448,6 +461,7 @@ if __name__ == "__main__":
                 rv = arrays["arr_0"][~dupmask]
                 rverr = arrays["arr_1"][~dupmask]
 
+
                 rvred = rv[wavelines > 7000]
                 rverr_red = rverr[wavelines > 7000]
 
@@ -459,6 +473,11 @@ if __name__ == "__main__":
                 
                 rvarrays[i] = rv
                 rverr_arrays[i] = rverr
+
+                corr_arrays[i] = arrays["arr_2"][~dupmask]
+                width_arrays[i] = arrays["arr_3"][~dupmask]
+                ind_arrays[i] = arrays["arr_4"][~dupmask]
+                depth_arrays[i] = arrays["arr_5"][~dupmask]
 
         # Calculate corr coeff for each line with respect to high trend lines for filtering
         pearsoncorr, perline = np.zeros(len(rvarrays.T)),np.zeros(len(rvarrays.T))
@@ -486,5 +505,5 @@ if __name__ == "__main__":
                 error[i] = np.mean(rverr[cut])
 
         # Output rvs and calculated parameters
-        np.savez("all_lines", rvarrays, rverr_arrays)
+        np.savez("all_lines", rvarrays, rverr_arrays, corr_arrays, width_arrays, ind_arrays, depth_arrays)
         np.savez("output_file", means, error, neidrv, time, angle, wavelines, contdiff, linedepth, temperatures, output[:,0], output[:,1], pearsoncorr, perline, numlines, args)
