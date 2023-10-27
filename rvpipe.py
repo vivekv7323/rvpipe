@@ -126,8 +126,9 @@ def load_ref_spectrum(path, telpath, wvlpath, maskstrength, minwl, maxwl):
         wavelength = result["arr_0"]
         flux = result["arr_1"]
 
-        wavelength = wavelength[(wavelength>minwl) & (wavelength<maxwl)]
-        flux = flux[(wavelength>minwl) & (wavelength<maxwl)]
+        wavelengthrange = (wavelength>minwl) & (wavelength<maxwl)
+        wavelength = wavelength[wavelengthrange]
+        flux = flux[wavelengthrange]
 
         # create telluric mask using grouups
         big_mask = (wavelength<0)
@@ -267,8 +268,8 @@ class FileRV(object):
                         fluxcont = fS[i]/maximum_filter1d(np.where(np.isnan(fS[i]),-np.inf, fS[i]), size=1000)
                         errorCont = eS[i]/maximum_filter1d(np.where(np.isnan(fS[i]),-np.inf, fS[i]), size=1000)
                         # Initialize arrays
-                        rvord, rverror_ord, corrcoeff_ord, linewidth_ord, pixelindices_ord, linedepth_ord = np.zeros(len(minima[i])),
-                        np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
+                        rvord, rverror_ord, corrcoeff_ord, linewidth_ord, pixelindices_ord, linedepth_ord = np.zeros(len(minima[i])),\
+                                np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i])),np.zeros(len(minima[i]))
                         # Measure line depth of Mn I 5394.47
                         if ((i==50) | (i==51)):
                                 mnbox = np.abs(wS[i][maxima[i]][np.argmin(np.abs(wS[i][maxima[i]] - 5394.7))] - 5394.7)
@@ -282,7 +283,7 @@ class FileRV(object):
                                 box = boxlist[i][j]
                                 linemin = minima[i][j]
                                 indices = np.where((wS[i] < (box+linemin)) & (wS[i] > (linemin-box)))
-                                pixelindices_ord[j] = indices[0]
+                                pixelindices_ord[j] = len(indices[0])
                                 fluxspec = fluxcont[indices]
                                 # minimum pixel length of window
                                 if ((len(indices[0]) > filterpars[0]) & (len(indices[0]) < filterpars[1]) & (~np.isnan(linemin)) & (~np.isnan(fluxspec).any()) & (linedepth[i][j] > filterpars[2]) & (contdiff[i][j] < filterpars[3])
@@ -410,13 +411,13 @@ if __name__ == "__main__":
         wavelines = np.concatenate(minima)
 
         # Open npz directory
-        files = list(pathlib.Path('npz').glob('*.npz'))
+        filesnpz = list(pathlib.Path('npz').glob('*.npz'))
 
         avg_rverr_line = np.empty(shape=(len(files), len(wavelines)))
 
         # Get average rv error per line
         for i in range(len(files)):
-                arrays = np.load(files[i])
+                arrays = np.load(filesnpz[i])
                 avg_rverr_line[i] = arrays["arr_1"]
         avg_rverr_line = np.nanmean(avg_rverr_line, axis=0)
 
@@ -450,9 +451,9 @@ if __name__ == "__main__":
         # Get high trend RVs in IR and neidrv, time, and solar altitude
         for i in tqdm(range(len(files)), desc="pearson correlation"):
 
-                arrays = np.load(files[i])
+                arrays = np.load(filesnpz[i])
 
-                hdul = fits.open(str(args.filedir)+files[i].name[:-7]+".fits")
+                hdul = fits.open(files[i])
 
                 angle[i] = hdul[0].header['SUNAGL']
                 neidrv[i] = hdul[12].header['CCFRVMOD']*1000
