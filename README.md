@@ -25,7 +25,7 @@
 
 `[-l] [minimum line depth]`: Specify minimum line depth (default = 0.005)
 
-`[-d] [maximum continuum difference`: Specify maximum continuum difference (default = 0.05)
+`[-d] [maximum continuum difference]`: Specify maximum continuum difference (default = 0.05)
 
 `[-i]`: Disable automatic creation of reference spectrum (`"refspectrum.npz"`) if one already exists from a previous run
 

@@ -127,7 +127,7 @@ def load_ref_spectrum(path, telpath, wvlpath, maskstrength, minwl, maxwl):
         flux = result["arr_1"]
 
         wavelength = wavelength[(wavelength>minwl) & (wavelength<maxwl)]
-        flux = wavelength[(wavelength>minwl) & (wavelength<maxwl)]
+        flux = flux[(wavelength>minwl) & (wavelength<maxwl)]
 
         # create telluric mask using grouups
         big_mask = (wavelength<0)
