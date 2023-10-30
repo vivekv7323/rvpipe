@@ -7,7 +7,7 @@
 
 ## Arguments:
 
-`python3 rvpipe.py ["target file directory"] [-c] [cpu count] [-t] [telluric mask strength] [-w] [-m] [-n] [-x] [-l] [-d] [-i]`
+`python3 rvpipe.py ["target file directory"] [-c] [cpu count] [-t] [telluric mask strength] [-w] [-m] [-n] [-x] [-l] [-d] [-p] [-i]`
 
 `["target file directory"]`: Required. Enter directory to target files for processing
 
@@ -26,6 +26,8 @@
 `[-l] [minimum line depth]`: Specify minimum line depth (default = 0.005)
 
 `[-d] [maximum continuum difference]`: Specify maximum continuum difference (default = 0.05)
+
+`[-p]`: Include lines that are not included in the line template
 
 `[-i]`: Disable automatic creation of reference spectrum (`"refspectrum.npz"`) if one already exists from a previous run
 

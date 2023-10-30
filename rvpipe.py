@@ -105,7 +105,7 @@ def create_ref_spectrum(path, reference):
 '''
 load reference spectrum, create telluric mask and line windows
 '''
-def load_ref_spectrum(path, telpath, wvlpath, maskstrength, minwl, maxwl):
+def load_ref_spectrum(path, telpath, wvlpath, maskstrength, minwl, maxwl, argmask):
 
         # Open telluric template
         y = fits.open(telpath)[0].data        
@@ -179,7 +179,7 @@ def load_ref_spectrum(path, telpath, wvlpath, maskstrength, minwl, maxwl):
 
                         # Get location of line peak
                         linemin = wavelength[i][minindices[i][j]]
-                        if (np.min(np.abs(tempmin - linemin)) < 0.1):
+                        if ((np.min(np.abs(tempmin - linemin)) < 0.1) or argmask):
                                 templateord[j] = True
                         else:
                                 templateord[j] = False
@@ -353,6 +353,8 @@ if __name__ == "__main__":
                             help="specify minimum line depth")
         parser.add_argument('-d', '--maxcontdiff',
                             help="specify maximum continuum difference")
+        parser.add_argument('-p', '--templatemask', action='store_true',
+                            help="include lines that are not in the line template")
         parser.add_argument('-i', '--noint', action='store_true',
                             help="disable automatic creation of reference spectrum if one already exists")
 
@@ -379,7 +381,7 @@ if __name__ == "__main__":
         if args.maxcontdiff == None:
                 print("defaulting to maximum continuum difference of 0.05")
                 args.maxcontdiff = 0.05
-        filterpars = [int(args.minlinewidth), int(args.maxlinewidth), int(args.minlinedepth), int(args.maxcontdiff)]
+        filterpars = [int(args.minlinewidth), int(args.maxlinewidth), float(args.minlinedepth), float(args.maxcontdiff)]
                 
         # directory for all files
         files = list(pathlib.Path(str(args.filedir)).glob('*.fits'))
@@ -392,7 +394,7 @@ if __name__ == "__main__":
 
         waveref, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask, temperatures =\
                  load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits','TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits',
-                                   int(args.telluricmask),int(args.minwavelength),int(args.maxwavelength))
+                                   int(args.telluricmask),float(args.minwavelength),float(args.maxwavelength), args.templatemask)
 
         # Create directory for npz output files
         if not os.path.exists('npz'):
