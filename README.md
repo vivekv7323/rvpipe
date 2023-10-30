@@ -7,17 +7,13 @@
 
 ## Arguments:
 
-`python3 rvpipe.py ["target file directory"] [-c] [cpu count] [-t] [telluric mask strength] [-w] [-m] [-n] [-x] [-l] [-d] [-p] [-i]`
+`python3 rvpipe.py ["target file directory"] [-c] [cpu count] [-t] [telluric mask strength] [-n] [-x] [-l] [-d] [-p] [-i]`
 
 `["target file directory"]`: Required. Enter directory to target files for processing
 
 `[-c] [cpu count]`: Specify number of cpus to use (default is all available)
 
 `[-t] [telluric mask strength]`: Specify telluric mask strength as a fraction of line depth (default = 4 (1e-4))
-
-`[-w] [minimum wavelength]`: Specify minimum wavelength to use for analysis in angstroms (default = 0)
-
-`[-m] [maximum wavelength]`: Specify minimum wavelength to use for analysis in angstroms (default = 7000 Å)
 
 `[-n] [minimum line width]`: Specify minimum line width in pixels (default = 10)
 

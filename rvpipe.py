@@ -105,7 +105,7 @@ def create_ref_spectrum(path, reference):
 '''
 load reference spectrum, create telluric mask and line windows
 '''
-def load_ref_spectrum(path, telpath, wvlpath, maskstrength, minwl, maxwl, argmask):
+def load_ref_spectrum(path, telpath, wvlpath, maskstrength, argmask):
 
         # Open telluric template
         y = fits.open(telpath)[0].data        
@@ -125,10 +125,6 @@ def load_ref_spectrum(path, telpath, wvlpath, maskstrength, minwl, maxwl, argmas
         result = np.load(path)
         wavelength = result["arr_0"]
         flux = result["arr_1"]
-
-        wavelengthrange = (wavelength>minwl) & (wavelength<maxwl)
-        wavelength = wavelength[wavelengthrange]
-        flux = flux[wavelengthrange]
 
         # create telluric mask using grouups
         big_mask = (wavelength<0)
@@ -294,7 +290,7 @@ class FileRV(object):
                                         halfmax = 0.5*(np.min(fluxspec)+np.max(fluxspec))
                                         linewidth_ord[j] = np.abs(waveline[waveline < linemin][np.argmin(np.abs(fluxspec[waveline < linemin] - halfmax))] -
                                                         waveline[waveline > linemin][np.argmin(np.abs(fluxspec[waveline > linemin] - halfmax))])
-                                        linedepth_ord[j] = 1 - 2*fluxspec[linemin]/(fluxspec[0]+fluxspec[-1])
+                                        linedepth_ord[j] = 1 - 2*np.min(fluxspec)/(fluxspec[0]+fluxspec[-1])
                                         # try/except linear regression
                                         location = ~np.isnan(flux[i][indices]) & ~np.isnan(fluxspec)
                                         # linear least-squares regression
@@ -341,10 +337,10 @@ if __name__ == "__main__":
         parser.add_argument('-c', '--cpucount', help="specify number of cpus to use")
         parser.add_argument('-t', '--telluricmask',
                             help="specify telluric mask strength as a fraction of line depth (default = 1e-4)")
-        parser.add_argument('-w', '--minwavelength',
-                            help="specify minimum wavelength to use for analysis in angstroms")
-        parser.add_argument('-m', '--maxwavelength',
-                            help="specify maximum wavelength to use for analysis in angstroms")
+##        parser.add_argument('-w', '--minwavelength',
+##                            help="specify minimum wavelength to use for analysis in angstroms")
+##        parser.add_argument('-m', '--maxwavelength',
+##                            help="specify maximum wavelength to use for analysis in angstroms")
         parser.add_argument('-n', '--minlinewidth',
                             help="specify minimum line width in pixels")
         parser.add_argument('-x', '--maxlinewidth',
@@ -363,12 +359,12 @@ if __name__ == "__main__":
         if args.telluricmask == None:
                 print("defaulting to telluric mask strength of 1e-4")
                 args.telluricmask = 4
-        if args.minwavelength == None:
-                print("defaulting to no minimum wavelength")
-                args.minwavelength = 0
-        if args.maxwavelength == None:
-                print("defaulting to maximum wavelength of 7000 Å")
-                args.maxwavelength = 7000
+##        if args.minwavelength == None:
+##                print("defaulting to no minimum wavelength")
+##                args.minwavelength = 0
+##        if args.maxwavelength == None:
+##                print("defaulting to maximum wavelength of 7000 Å")
+##                args.maxwavelength = 7000
         if args.minlinewidth == None:
                 print("defaulting to minimum line width of 10 pixels")
                 args.minlinewidth = 10
@@ -394,7 +390,7 @@ if __name__ == "__main__":
 
         waveref, csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask, temperatures =\
                  load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits','TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits',
-                                   int(args.telluricmask),float(args.minwavelength),float(args.maxwavelength), args.templatemask)
+                                   int(args.telluricmask), args.templatemask)
 
         # Create directory for npz output files
         if not os.path.exists('npz'):
@@ -413,13 +409,13 @@ if __name__ == "__main__":
         wavelines = np.concatenate(minima)
 
         # Open npz directory
-        filesnpz = list(pathlib.Path('npz').glob('*.npz'))
+        files = list(pathlib.Path('npz').glob('*.npz'))
 
         avg_rverr_line = np.empty(shape=(len(files), len(wavelines)))
 
         # Get average rv error per line
         for i in range(len(files)):
-                arrays = np.load(filesnpz[i])
+                arrays = np.load(files[i])
                 avg_rverr_line[i] = arrays["arr_1"]
         avg_rverr_line = np.nanmean(avg_rverr_line, axis=0)
 
@@ -453,9 +449,9 @@ if __name__ == "__main__":
         # Get high trend RVs in IR and neidrv, time, and solar altitude
         for i in tqdm(range(len(files)), desc="pearson correlation"):
 
-                arrays = np.load(filesnpz[i])
+                arrays = np.load(files[i])
 
-                hdul = fits.open(files[i])
+                hdul = fits.open(os.path.join(str(args.filedir), files[i].name[:-7]+".fits"))
 
                 angle[i] = hdul[0].header['SUNAGL']
                 neidrv[i] = hdul[12].header['CCFRVMOD']*1000
