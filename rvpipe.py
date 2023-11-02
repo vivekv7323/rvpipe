@@ -21,7 +21,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 '''
 get data from single fits file
 '''
-def fetch_single(path):
+def fetch_single(path, cropL, cropR):
         # define the fits extensions
         fib = 'SCI' # SCIENCE fiber
         fits_extension_spectrum = fib + 'FLUX' # this is how we catalog the different bits of NEID data
@@ -37,18 +37,19 @@ def fetch_single(path):
         # the actual spectrum (in flux units)
         data_spec = hdul[1].data[17:-13,:]
         # the actual blaze (in flux units)
-        blz_spec = hdul[15].data[17:-13,:]
+        blz_spec = hdul[15].data[17:-13,cropL:cropR]
         # the variance of the spectrum
-        # var = fits.getdata(path, fits_extension_variance)[9:-5,:]
+        # var = fits.getdata(path, fits_extension_variance)[17:-13,:]
         var = np.ones_like(data_spec)
         var[data_spec>0] = np.sqrt(data_spec[data_spec>0])
-        # the wavelength solution of the spectrum (natively in Angstroms)
-        wsol = hdul[7].data[17:-13,:] # A
-        # Shift to heliocentric frame, compensate for zero point offset
-        wsol = wsol*(1 + ((berv-83285) / 299792458))
         # manually filter bad columns
         data_spec[:,434:451]   = 0
         data_spec[:,1930:1945] = 0
+        data_spec = data_spec[:, cropL:cropR]
+        # the wavelength solution of the spectrum (natively in Angstroms)
+        wsol = hdul[7].data[17:-13,cropL:cropR] # A
+        # Shift to heliocentric frame, compensate for zero point offset
+        wsol = wsol*(1 + ((berv-83285) / 299792458))
         # filter for orders with duplicates in x
         wsol      = list(wsol)[:109]      + list(wsol)[111:]
         data_spec = list(data_spec)[:109] + list(data_spec)[111:]
@@ -76,13 +77,13 @@ def fetch_single(path):
 '''
 creates reference spectrum from files in path, and a wavelength reference
 '''
-def create_ref_spectrum(path, reference):
+def create_ref_spectrum(path, reference, cropL, cropR):
         
         # directory for all files
         files = list(pathlib.Path(path).glob('*.fits'))
 
         # get reference file
-        waveref,flux,error = fetch_single(reference)
+        waveref,flux,error = fetch_single(reference, cropL, cropR)
 
         # initialize array for reference spectrum
         refspectrum = np.zeros(np.shape(waveref))
@@ -91,7 +92,7 @@ def create_ref_spectrum(path, reference):
         for k in tqdm(range(len(files)), desc="integrating reference"):
 
                 # get file
-                wavelength,flux,error = fetch_single(files[k])
+                wavelength,flux,error = fetch_single(files[k], cropL, cropR)
 
                 # normalize flux
                 for i in range(len(flux)):
@@ -220,9 +221,9 @@ class FileRV(object):
         def __init__(self, params):
                 self.params = params
         def __call__(self, file):
-                csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask, filterpars = self.params
+                csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask, filterpars, cropL, cropR = self.params
                 
-                wS, fS, eS = fetch_single(file)
+                wS, fS, eS = fetch_single(file, cropL, cropR)
 
                 # Interpolate flux of reference to file
                 flux = np.vstack([csplines[i](wS[i]) for i in range(np.shape(wS)[0])])
@@ -356,6 +357,9 @@ if __name__ == "__main__":
 
         args = parser.parse_args()
 
+        cropL = 1500
+        cropR = 7500
+
         if args.telluricmask == None:
                 print("defaulting to telluric mask strength of 1e-4")
                 args.telluricmask = 4
@@ -403,7 +407,8 @@ if __name__ == "__main__":
         else:
                 pool = Pool(int(args.cpucount))
                         
-        output = np.asarray(pool.map(FileRV((csplines, minima, maxima, contdiff, linedepth, boxlist, templatemask, filterpars)), files))
+        output = np.asarray(pool.map(FileRV((csplines, minima, maxima, contdiff, linedepth, boxlist,
+                                             templatemask, filterpars, cropL, cropR)), files))
                               
         # flatten line minima array
         wavelines = np.concatenate(minima)
