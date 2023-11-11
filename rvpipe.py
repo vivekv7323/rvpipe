@@ -22,12 +22,6 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 get data from single fits file
 '''
 def fetch_single(path, cropL, cropR):
-        # define the fits extensions
-        fib = 'SCI' # SCIENCE fiber
-        fits_extension_spectrum = fib + 'FLUX' # this is how we catalog the different bits of NEID data
-        fits_extension_variance = fib + 'VAR' # variance (noise) extension of fits file
-        fits_extension_wavelength = fib + 'WAVE' # wavelength solution extension
-        fits_extension_blaze = fib + 'BLAZE' # wavelength solution extension
         # primary header
         hdul = fits.open(path)
         header = hdul[0].header
@@ -36,16 +30,16 @@ def fetch_single(path, cropL, cropR):
         #drift = header['DRIFTRV0'] # m/s
         # the actual spectrum (in flux units)
         data_spec = hdul[1].data[17:-13,:]
+        # manually filter bad columns
+        data_spec[:,434:451]   = 0
+        data_spec[:,1930:1945] = 0
+        data_spec = data_spec[:, cropL:cropR]
         # the actual blaze (in flux units)
         blz_spec = hdul[15].data[17:-13,cropL:cropR]
         # the variance of the spectrum
         # var = fits.getdata(path, fits_extension_variance)[17:-13,:]
         var = np.ones_like(data_spec)
         var[data_spec>0] = np.sqrt(data_spec[data_spec>0])
-        # manually filter bad columns
-        data_spec[:,434:451]   = 0
-        data_spec[:,1930:1945] = 0
-        data_spec = data_spec[:, cropL:cropR]
         # the wavelength solution of the spectrum (natively in Angstroms)
         wsol = hdul[7].data[17:-13,cropL:cropR] # A
         # Shift to heliocentric frame, compensate for zero point offset
@@ -85,10 +79,10 @@ def create_ref_spectrum(path, reference, cropL, cropR):
         # get reference file
         waveref,flux,error = fetch_single(reference, cropL, cropR)
 
-        # initialize array for reference spectrum
-        refspectrum = np.zeros(np.shape(waveref))
+        # initialize 3D array to store all spectra to handle nans properly      
+        big3Darr = np.zeros((len(files), np.shape(waveref)[0], np.shape(waveref)[1]))
 
-        # integrate fluxes for all files after interpolating them to the same wavelength array
+        # store all spectra after interpolating them to the same wavelength array and normalizing them
         for k in tqdm(range(len(files)), desc="integrating reference"):
 
                 # get file
@@ -99,9 +93,12 @@ def create_ref_spectrum(path, reference, cropL, cropR):
                         flux[i] = flux[i]/maximum_filter1d(np.where(np.isnan(flux[i]),-np.inf, flux[i]), size=1000)
                         
                 # interpolate and integrate
-                refspectrum += np.concatenate([interp(waveref[[j]],wavelength[j],flux[j]) for j in range(np.shape(flux)[0])])
-
-        return waveref, refspectrum/len(files)
+                big3Darr[k] = np.concatenate([interp(waveref[[j]],wavelength[j],flux[j]) for j in range(np.shape(flux)[0])])
+                
+        # integrate 3D array
+        refspectrum = np.nanmean(big3Darr, axis=0)
+        
+        return waveref, refspectrum
 
 '''
 load reference spectrum, create telluric mask and line windows
@@ -388,7 +385,7 @@ if __name__ == "__main__":
         
         if not args.noint:
 
-                waveref, refspectrum = create_ref_spectrum(str(args.filedir), files[0])
+                waveref, refspectrum = create_ref_spectrum(str(args.filedir), files[0], cropL, cropR)
                 # Save reference spectrum
                 np.savez("refspectrum.npz", waveref, refspectrum)
 

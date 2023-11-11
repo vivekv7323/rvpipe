@@ -7,13 +7,11 @@
 
 ## Arguments:
 
-`python3 rvpipe.py ["target file directory"] [-c] [cpu count] [-t] [telluric mask strength] [-n] [-x] [-l] [-d] [-p] [-i]`
+`python3 rvpipe.py ["target file directory"] [-c] [cpu count] [-n] [-x] [-l] [-d] [-p] [-i]`
 
 `["target file directory"]`: Required. Enter directory to target files for processing
 
 `[-c] [cpu count]`: Specify number of cpus to use (default is all available)
-
-`[-t] [telluric mask strength]`: Specify telluric mask strength as a fraction of line depth (default = 4 (1e-4))
 
 `[-n] [minimum line width]`: Specify minimum line width in pixels (default = 10)
 
@@ -27,7 +25,7 @@
 
 `[-i]`: Disable automatic creation of reference spectrum (`"refspectrum.npz"`) if one already exists from a previous run
 
-Example: `python3 rvpipe.py 'data' -c 6 -t 5 -i`
+Example: `python3 rvpipe.py 'data' -c 6 -n 20 -i`
 
 ## Outputs:
 
