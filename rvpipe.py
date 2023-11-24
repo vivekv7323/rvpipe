@@ -53,8 +53,13 @@ def get_data(path, cropL, cropR, filetype):
                 # the actual blaze (in flux units)
                 blz_spec = hdul[15].data[17:-13,cropL:cropR]
                 
-                # the variance of the spectrum
-                var = fits.getdata(path, fits_extension_variance)[17:-13,cropL:cropR]
+                # the standard deviation of the spectrum from variance
+                #var = np.ones_like(data_spec)
+                #var[data_spec>0] = np.sqrt(data_spec[data_spec>0])
+                var = np.sqrt(hdul[4].data[17:-13,:])
+                var[:,434:451]   = 0
+                var[:,1930:1945] = 0
+                var = var[:, cropL:cropR]
                 
                 # the wavelength solution of the spectrum (natively in Angstroms)
                 wsol = hdul[7].data[17:-13,cropL:cropR] # A
@@ -599,6 +604,10 @@ if __name__ == "__main__":
         linedepth = np.concatenate(linedepth)[~dupmask]
         contdiff = np.concatenate(contdiff)[~dupmask]
         temperatures = np.concatenate(temperatures)[~dupmask]
+        contavg = np.concatenate(contavg)[~dupmask]
+        masscenter = np.concatenate(masscenter)[~dupmask]
+        jerkdistance = np.concatenate(jerkdistance)[~dupmask]
+        bisectormax = np.concatenate(bisectormax)[~dupmask]
 
         # initialize other arrays
         meansr,means,error,numlines=np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files))
