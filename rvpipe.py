@@ -273,8 +273,8 @@ def load_ref_spectrum(path, telpath, wvlpath, maskdepth, maskdev, argmask, minli
                         cflux = csplines[i](window)
                         der1 = csplines[i](window, 1)
                         der2 = csplines[i](window, 2)
-                        dermax = window[der1 == np.max(der1)]
-                        dermin = window[der1 == np.min(der1)]
+                        dermax = window[der1 == np.max(der1)][0]
+                        dermin = window[der1 == np.min(der1)][0]
                         mass_ord[j] = np.abs(((dermax+dermin)/2)-linemin)/(dermax-dermin)
 
                         # difference between maxima
@@ -450,12 +450,8 @@ class FileRV(object):
                         pixelindices = np.concatenate((pixelindices, pixelindices_ord))
                         linedepthline = np.concatenate((linedepthline, linedepth_ord))
 
-                np.savez('npz/'+ file.name[:-5]+"_rv", rv, rverror, corrcoeff, linewidth, pixelindices, linedepthline)
-                
-                #print("Processed", file)
-                
-                # sindex, mnlinedepth, neidrv, time, angle
-                return s_index, mn_linedepth*0.5, measurements[0], measurements[1], measurements[2]
+                np.savez('npz/'+ file.name[:-5]+"_rv", rv, rverror, corrcoeff, linewidth, pixelindices,\
+                         linedepthline,[s_index, mn_linedepth*0.5, measurements[0], measurements[1], measurements[2]])
 
 if __name__ == "__main__":
 
@@ -558,7 +554,7 @@ if __name__ == "__main__":
 
         waveref, csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance, bisectormax, templatemask, temperatures, boxlist =\
                  load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits','TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits',
-                                   int(args.telluricmaskdepth), int(args.telluricmaskdev), args.templatemask, filterpars[2])
+                                   int(args.telluricmaskdepth), float(args.telluricmaskdev), args.templatemask, filterpars[2])
 
         # Create directory for npz output files
         if not os.path.exists('npz'):
@@ -571,8 +567,8 @@ if __name__ == "__main__":
         else:
                 pool = Pool(int(args.cpucount))
                         
-        output = np.asarray(pool.map(FileRV((csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance, bisectormax,\
-                                             templatemask, boxlist, filterpars, cropL, cropR, args.filetype)), files))
+        pool.map(FileRV((csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance, bisectormax,\
+                                             templatemask, boxlist, filterpars, cropL, cropR, args.filetype)), files)
                               
         # flatten line minima array
         wavelines = np.concatenate(minima)
@@ -610,15 +606,12 @@ if __name__ == "__main__":
         bisectormax = np.concatenate(bisectormax)[~dupmask]
 
         # initialize other arrays
-        meansr,means,error,numlines=np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files))
+        meansr,means,error,neidrv,time,angle,sindex,mndepth,numlines=np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),\
+                                                                      np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files))
 
-        rvarrays = np.empty(shape=(len(files), len(wavelines)))
-        rverr_arrays = np.empty(shape=(len(files), len(wavelines)))
-        corr_arrays = np.empty(shape=(len(files), len(wavelines)))
-        width_arrays = np.empty(shape=(len(files), len(wavelines)))
-        ind_arrays = np.empty(shape=(len(files), len(wavelines)))
-        depth_arrays = np.empty(shape=(len(files), len(wavelines)))
-        line_search = np.empty(shape=(len(files), len(wavelines)))
+        rvarrays,rverr_arrays,corr_arrays,width_arrays,ind_arrays,depth_arrays,line_search = np.empty(shape=(len(files), len(wavelines))),\
+                np.empty(shape=(len(files), len(wavelines))),np.empty(shape=(len(files), len(wavelines))),np.empty(shape=(len(files), len(wavelines))),\
+                np.empty(shape=(len(files), len(wavelines))),np.empty(shape=(len(files), len(wavelines))),np.empty(shape=(len(files), len(wavelines)))
 
         # Get high trend RVs in IR and neidrv, time, and solar altitude
         for i in tqdm(range(len(files)), desc="pearson correlation"):
@@ -646,6 +639,8 @@ if __name__ == "__main__":
                 width_arrays[i] = arrays["arr_3"][~dupmask]
                 ind_arrays[i] = arrays["arr_4"][~dupmask]
                 depth_arrays[i] = arrays["arr_5"][~dupmask]
+                measures = arrays["arr_6"]
+                sindex[i],mndepth[i],neidrv[i],time[i],angle[i] = measures
 
         # Calculate corr coeff for each line with respect to high trend lines for filtering
         pearsoncorr, perline = np.zeros(len(rvarrays.T)),np.zeros(len(rvarrays.T))
@@ -683,4 +678,4 @@ if __name__ == "__main__":
         # Output rvs and calculated parameters
         np.savez("all_lines", rvarrays, rverr_arrays, corr_arrays, width_arrays, ind_arrays, depth_arrays)
         np.savez("filter_pars", wavelines, temperatures, contdiff, contavg, masscenter, jerkdistance, bisectormax, linedepth,pearsoncorr, perline)
-        np.savez("output_file", means, error, output[:,2], output[:,3], output[:,4], output[:,0], output[:,1],numlines, args)
+        np.savez("output_file", means, error, neidrv, time, angle, sindex, mndepth,numlines, args)
