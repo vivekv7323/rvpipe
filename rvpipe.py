@@ -490,8 +490,8 @@ if __name__ == "__main__":
         parser.add_argument('-b', '--bisector',
                             help="specify maximum number of bisector extrema")
         
-        parser.add_argument('-p', '--templatemask', action='store_true',
-                            help="include lines that are not in the line template")
+        parser.add_argument('-p', '--templatemask', action='store_false',
+                            help="restrict lines to those in the line template")
         parser.add_argument('-i', '--noint', action='store_true',
                             help="disable automatic creation of reference spectrum if one already exists")
 
@@ -505,8 +505,8 @@ if __name__ == "__main__":
                 print("defaulting to telluric mask depth of 1e-4")
                 args.telluricmaskdepth = 4
         if args.telluricmaskdev == None:
-                print("defaulting to telluric cut-off of 0.05 Å")
-                args.telluricmaskdev = 0.05
+                print("defaulting to telluric cut-off of 0.1 Å")
+                args.telluricmaskdev = 0.1
                 
 ##        if args.minwavelength == None:
 ##                print("defaulting to no minimum wavelength")
@@ -519,11 +519,11 @@ if __name__ == "__main__":
                 print("defaulting to minimum line width of 10 pixels")
                 args.minlinewidth = 10
         if args.maxlinewidth == None:
-                print("defaulting to maximum line width of 100 pixels")
-                args.maxlinewidth = 100
+                print("defaulting to maximum line width of 250 pixels")
+                args.maxlinewidth = 250
         if args.minlinedepth == None:
-                print("defaulting to minimum line depth of 0.005")
-                args.minlinedepth = 0.005
+                print("defaulting to minimum line depth of 0.01")
+                args.minlinedepth = 0.01
         if args.maxcontdiff == None:
                 print("defaulting to maximum continuum difference of 0.05")
                 args.maxcontdiff = 0.05
@@ -607,11 +607,11 @@ if __name__ == "__main__":
 
         # initialize other arrays
         meansr,means,error,neidrv,time,angle,sindex,mndepth,numlines=np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),\
-                                                                      np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files))
+                                                                      np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files))
 
         rvarrays,rverr_arrays,corr_arrays,width_arrays,ind_arrays,depth_arrays,line_search = np.empty(shape=(len(files), len(wavelines))),\
                 np.empty(shape=(len(files), len(wavelines))),np.empty(shape=(len(files), len(wavelines))),np.empty(shape=(len(files), len(wavelines))),\
-                np.empty(shape=(len(files), len(wavelines))),np.empty(shape=(len(files), len(wavelines))),np.empty(shape=(len(files), len(wavelines)))
+                np.empty(shape=(len(files), len(wavelines))),np.empty(shape=(len(files),len(wavelines))),np.empty(shape=(len(files),len(wavelines)))
 
         # Get high trend RVs in IR and neidrv, time, and solar altitude
         for i in tqdm(range(len(files)), desc="pearson correlation"):
