@@ -124,7 +124,23 @@ def get_data(path, cropL, cropR, filetype):
                 Y[Y==0] = np.nan
                 E = np.sqrt(Y)
 
-                measurements = [np.nan, hdul[0].header["HIERARCH ESO DRS BJD"],hdul[0].header["HIERARCH ESO TEL ALT"]]
+                try:
+                        adprv = hdul[0].header["HIERARCH ESO QC CCF RV"]
+                except:
+                        adprv = np.nan
+                try:
+                        adptime = hdul[0].header["HIERARCH ESO DRS BJD"]
+                except:
+                        adptime = hdul[0].header["HIERARCH ESO QC BJD"]
+                try:
+                        try:
+                                adpalt = hdul[0].header["HIERARCH ESO TEL ALT"]
+                        except:
+                                adpalt = hdul[0].header["HIERARCH ESO TEL1 ALT"]
+                except:
+                        adpalt = np.nan
+
+                measurements = [adprv, adptime, adpalt]
                 
         else:
                 raise ValueError("no filetype specified")
