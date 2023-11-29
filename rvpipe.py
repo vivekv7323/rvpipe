@@ -110,6 +110,21 @@ def get_data(path, cropL, cropR, filetype):
                 
                 # get bulk rv, time, and altitude
                 measurements = [hdul[0].header["HIERARCH TNG QC CCF RV"]*1000, hdul[0].header["HIERARCH TNG QC BJD"],hdul[0].header["EL"]]
+
+        elif (filetype == "adp"):
+                
+                hdul = fits.open(path)
+
+                length = len(hdul[1].data[0][0])
+
+                X, Y, E = np.zeros((1, length)),np.zeros((1, length)),np.zeros((1, length))
+
+                X[0,:],Y[0,:] = hdul[1].data[0][0], hdul[1].data[0][1]
+
+                Y[Y==0] = np.nan
+                E = np.sqrt(Y)
+
+                measurements = [0, hdul[0].header["HIERARCH ESO DRS BJD"],hdul[0].header["HIERARCH ESO TEL ALT"]]
                 
         else:
                 raise ValueError("no filetype specified")
@@ -340,7 +355,7 @@ class FileRV(object):
                         ca_ind3 = 10
                         mn_ind = 50
                         mn_ind2 = 51
-                elif (filetype == "harpn"):
+                elif ((filetype == "harpn") or (filetype == "adp")):
                         ca_ind = 0
                         ca_ind2 = 0
                         ca_ind3 = 0
@@ -390,7 +405,10 @@ class FileRV(object):
                         if ((i==mn_ind) | (i==mn_ind2)):
                                 mnbox = np.abs(wS[i][maxima[i]][np.argmin(np.abs(wS[i][maxima[i]] - 5394.7))] - 5394.7)
                                 relflux = fluxcont[(wS[i] > (5394.7-mnbox)) & (wS[i] < (5394.7+mnbox))]
-                                mn_linedepth += 1 - (np.min(relflux))/np.max(relflux)
+                                try:
+                                        mn_linedepth += 1 - (np.min(relflux))/np.max(relflux)
+                                except:
+                                        mn_linedepth = np.nan
 
                         # iterate over lines in each order
                         for j in range(len(minima[i])):
@@ -506,7 +524,7 @@ if __name__ == "__main__":
                 args.telluricmaskdepth = 4
         if args.telluricmaskdev == None:
                 print("defaulting to telluric cut-off of 0.1 Å")
-                args.telluricmaskdev = 0.1
+                args.telluricmaskdev = 0.2
                 
 ##        if args.minwavelength == None:
 ##                print("defaulting to no minimum wavelength")
@@ -523,7 +541,7 @@ if __name__ == "__main__":
                 args.maxlinewidth = 250
         if args.minlinedepth == None:
                 print("defaulting to minimum line depth of 0.01")
-                args.minlinedepth = 0.01
+                args.minlinedepth = 0.05
         if args.maxcontdiff == None:
                 print("defaulting to maximum continuum difference of 0.05")
                 args.maxcontdiff = 0.05
@@ -666,7 +684,7 @@ if __name__ == "__main__":
                 if (args.filetype == "neid"):
                         cut = np.where((rverr < 3*np.nanmean(rverr)) &
                         (np.abs(rv - np.nanmean(rv)) < 3*np.nanstd(rv))& (np.abs(pearsoncorr) < 0.5) & (perline > 0.01))
-                elif (args.filetype == "harpn"):
+                elif ((args.filetype == "harpn") or (args.filetype == "adp")):
                         cut = np.where((rverr < 3*np.nanmean(rverr)) &
                         (np.abs(rv - np.nanmean(rv)) < 3*np.nanstd(rv))& (perline > 0.01))                        
 
