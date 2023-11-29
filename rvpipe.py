@@ -124,7 +124,7 @@ def get_data(path, cropL, cropR, filetype):
                 Y[Y==0] = np.nan
                 E = np.sqrt(Y)
 
-                measurements = [0, hdul[0].header["HIERARCH ESO DRS BJD"],hdul[0].header["HIERARCH ESO TEL ALT"]]
+                measurements = [np.nan, hdul[0].header["HIERARCH ESO DRS BJD"],hdul[0].header["HIERARCH ESO TEL ALT"]]
                 
         else:
                 raise ValueError("no filetype specified")
@@ -691,7 +691,7 @@ if __name__ == "__main__":
                 numlines[i] = len(rv[cut])
 
                 means[i] = np.sum(rv[cut]/(rverr[cut]**2))/np.sum(1/(rverr[cut]**2))
-                error[i] = np.mean(rverr[cut])
+                error[i] = np.mean(rverr[cut])/np.sqrt(len(rv[cut]))
 
         # Output rvs and calculated parameters
         np.savez("all_lines", rvarrays, rverr_arrays, corr_arrays, width_arrays, ind_arrays, depth_arrays)
