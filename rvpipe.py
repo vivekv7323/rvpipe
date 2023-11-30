@@ -153,7 +153,7 @@ creates reference spectrum from files in path, and a wavelength reference
 def create_ref_spectrum(path, reference, cropL, cropR, filetype):
         
         # directory for all files
-        files = list(pathlib.Path(path).glob('*.fits'))
+        files = list(pathlib.Path(path).rglob('*.fits'))
 
         # get reference file
         waveref,flux,error,measurements = get_data(reference, cropL, cropR, filetype)
@@ -184,7 +184,7 @@ def create_ref_spectrum(path, reference, cropL, cropR, filetype):
         refspectrum = np.nanmean(big3Darr, axis=0)
         
         # get error estimate
-        avgerr = np.mean(err)
+        avgerr = np.mean(err[err<1])
         
         return waveref, refspectrum, avgerr
 
@@ -578,7 +578,7 @@ if __name__ == "__main__":
                       float(args.mincontavg), float(args.masscenter), float(args.jerkdistance), int(args.bisector)]
                 
         # directory for all files
-        files = list(pathlib.Path(str(args.filedir)).glob('*.fits'))
+        files = list(pathlib.Path(str(args.filedir)).rglob('*.fits'))
         
         if not args.noint:
 
