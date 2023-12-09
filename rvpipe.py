@@ -375,8 +375,8 @@ class FileRV(object):
         def __init__(self, params):
                 self.params = params
         def __call__(self, file):
-                csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance,
-                bisectormax, templatemask, boxlist, filterpars, cropL, cropR, filetype, path_intermed = self.params
+                csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance,\
+                        bisectormax, templatemask, boxlist, filterpars, cropL, cropR, filetype, path_intermed = self.params
                 
                 wS, fS, eS, measurements = get_data(file, cropL, cropR, filetype)
 
@@ -646,9 +646,9 @@ if __name__ == "__main__":
                         print("buffered integration")
                       
                         splitlist = np.linspace(0, len(files), 1+int(args.buffer))[1:-1].round().astype(int)
-                        filelist = np.split(files, splitlist)
+                        filebufs = np.split(files, splitlist)
 
-                        bigarr, err = zip(*tqdm(pool.imap(RefSpecBuf((waveref, cropL, cropR, args.filetype)), filelist), desc="integrating files"))
+                        bigarr, err = zip(*tqdm(pool.imap(RefSpecBuf((waveref, cropL, cropR, args.filetype)), filebufs), desc="integrating files"))
 
                         refspectrum = np.sum(bigarr, axis=0)/len(files)
 
@@ -662,9 +662,9 @@ if __name__ == "__main__":
         waveref, csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance, bisectormax, templatemask, temperatures, boxlist =\
                  load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits','TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits',
                                    int(args.telluricmaskdepth), float(args.telluricmaskdev), args.templatemask, filterpars[2])
-                        
-        tqdm(pool.imap(FileRV((csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance, bisectormax,\
-                                             templatemask, boxlist, filterpars, cropL, cropR, args.filetype, path_intermed)), files), desc="processing files")
+
+        list(tqdm(pool.imap(FileRV((csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance, bisectormax,\
+                                             templatemask, boxlist, filterpars, cropL, cropR, args.filetype, path_intermed)), files), desc="processing files"))
                               
         # flatten line minima array
         wavelines = np.concatenate(minima)
