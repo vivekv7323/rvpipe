@@ -150,43 +150,60 @@ def get_data(path, cropL, cropR, filetype):
 '''
 creates reference spectrum from files in path, and a wavelength reference
 '''
-def create_ref_spectrum(path, reference, cropL, cropR, filetype):
+class RefSpec(object):
         
-        # directory for all files
-        files = list(pathlib.Path(path).rglob('*.fits'))
+        def __init__(self, params):
+                self.params = params
+                
+        def __call__(self, file):
 
-        # get reference file
-        waveref,flux,error,measurements = get_data(reference, cropL, cropR, filetype)
-
-        # initialize 3D array to store all spectra to handle nans properly      
-        big3Darr = np.zeros((len(files), np.shape(waveref)[0], np.shape(waveref)[1]))
-
-        # error estimate
-        err = np.zeros(len(files))
-
-        # store all spectra after interpolating them to the same wavelength array and normalizing them
-        for k in tqdm(range(len(files)), desc="integrating reference"):
+                waveref, cropL, cropR, filetype = self.params
 
                 # get file
-                wavelength,flux,error,measurements = get_data(files[k], cropL, cropR, filetype)
+                wavelength,flux,error,measurements = get_data(file, cropL, cropR, filetype)
 
                 # overall mean error
-                err[k] = np.nanmedian(error)/np.nanmean(flux)
+                err = np.nanmedian(error)/np.nanmean(flux)
 
                 # normalize flux
                 for i in range(len(flux)):
                         flux[i] = flux[i]/maximum_filter1d(np.where(np.isnan(flux[i]),-np.inf, flux[i]), size=1000)
                         
                 # interpolate and integrate
-                big3Darr[k] = np.concatenate([interp(waveref[[j]],wavelength[j],flux[j]) for j in range(np.shape(flux)[0])])
+                big2Darr = np.concatenate([interp(waveref[[j]],wavelength[j],flux[j]) for j in range(np.shape(flux)[0])])
+
+                return big2Darr, err
+
+class RefSpecBuf(object):
+        
+        def __init__(self, params):
+                self.params = params
                 
-        # integrate 3D array
-        refspectrum = np.nanmean(big3Darr, axis=0)
-        
-        # get error estimate
-        avgerr = np.mean(err[err<1])
-        
-        return waveref, refspectrum, avgerr
+        def __call__(self, files):
+
+                waveref, cropL, cropR, filetype = self.params
+
+                # array for integrating files      
+                buf_3D = np.zeros((len(files), np.shape(waveref)[0], np.shape(waveref)[1]))
+                
+                # error estimate
+                err = np.zeros(len(files))
+
+                for k in range(len(files)):
+                        # get file
+                        wavelength,flux,error,measurements = get_data(files[k], cropL, cropR, filetype)
+
+                        # overall mean error
+                        err[k] = np.nanmedian(error)/np.nanmean(flux)
+
+                        # normalize flux
+                        for i in range(len(flux)):
+                                flux[i] = flux[i]/maximum_filter1d(np.where(np.isnan(flux[i]),-np.inf, flux[i]), size=1000)
+
+                        buf_3D[k] = np.concatenate([interp(waveref[[j]],wavelength[j],flux[j]) for j in range(np.shape(flux)[0])])
+
+
+                return np.nanmean(buf_3D, axis=0)*len(files), np.mean(err[err<1])
 
 '''
 load reference spectrum, create telluric mask and line windows
@@ -358,7 +375,8 @@ class FileRV(object):
         def __init__(self, params):
                 self.params = params
         def __call__(self, file):
-                csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance, bisectormax, templatemask, boxlist, filterpars, cropL, cropR, filetype = self.params
+                csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance,
+                bisectormax, templatemask, boxlist, filterpars, cropL, cropR, filetype, path_intermed = self.params
                 
                 wS, fS, eS, measurements = get_data(file, cropL, cropR, filetype)
 
@@ -484,7 +502,7 @@ class FileRV(object):
                         pixelindices = np.concatenate((pixelindices, pixelindices_ord))
                         linedepthline = np.concatenate((linedepthline, linedepth_ord))
 
-                np.savez('npz/'+ file.name[:-5]+"_rv", rv, rverror, corrcoeff, linewidth, pixelindices,\
+                np.savez(os.path.join(path_intermed, file.name[:-5]+"_rv"), rv, rverror, corrcoeff, linewidth, pixelindices,\
                          linedepthline,[s_index, mn_linedepth*0.5, measurements[0], measurements[1], measurements[2]])
 
 if __name__ == "__main__":
@@ -493,8 +511,13 @@ if __name__ == "__main__":
 
         parser.add_argument('filedir', help="file directory for target files")
         parser.add_argument('filetype', help="type of data file (NEID, HARPN, etc.)")
+
+        parser.add_argument('-imf', '--intermedfiles',
+                            help="file directory for intermediate files")
         
         parser.add_argument('-c', '--cpucount', help="specify number of cpus to use")
+        parser.add_argument('-buf', '--buffer',
+                    help="specify number of buffers for buffered integration")
         
         parser.add_argument('-td', '--telluricmaskdepth',
                             help="specify telluric mask strength as related to telluric line depth (default = 4, corresponding to a line depth of 1e-4)")
@@ -506,27 +529,26 @@ if __name__ == "__main__":
 ##        parser.add_argument('-', '--maxwavelength',
 ##                            help="specify maximum wavelength to use for analysis in angstroms")
         
-        parser.add_argument('-n', '--minlinewidth',
+        parser.add_argument('-mlw', '--minlinewidth',
                             help="specify minimum line width in pixels")
-        parser.add_argument('-x', '--maxlinewidth',
+        parser.add_argument('-xlw', '--maxlinewidth',
                             help="specify maximum line width in pixels")
-        
-        parser.add_argument('-l', '--minlinedepth',
+        parser.add_argument('-mld', '--minlinedepth',
                             help="specify minimum line depth")
-        parser.add_argument('-d', '--maxcontdiff',
+        parser.add_argument('-mcd', '--maxcontdiff',
                             help="specify maximum continuum difference")
-        parser.add_argument('-a', '--mincontavg',
+        parser.add_argument('-mca', '--mincontavg',
                             help="specify minimum continuum average")
-        parser.add_argument('-m', '--masscenter',
+        parser.add_argument('-mc', '--masscenter',
                             help="specify maximum mass center")
-        parser.add_argument('-j', '--jerkdistance',
+        parser.add_argument('-jd', '--jerkdistance',
                             help="specify maximum jerk distance")
         parser.add_argument('-b', '--bisector',
                             help="specify maximum number of bisector extrema")
         
-        parser.add_argument('-p', '--templatemask', action='store_false',
+        parser.add_argument('-tm', '--templatemask', action='store_false',
                             help="restrict lines to those in the line template")
-        parser.add_argument('-i', '--noint', action='store_true',
+        parser.add_argument('-ni', '--noint', action='store_true',
                             help="disable automatic creation of reference spectrum if one already exists")
 
         args = parser.parse_args()
@@ -534,6 +556,13 @@ if __name__ == "__main__":
         # crop regions exclusively for NEID, no inclusion as a parameter yet
         cropL = 1500
         cropR = 7500
+
+        # Parallel process files with args
+        if args.cpucount == None:
+                print("using default Pool")
+                pool = Pool()
+        else:
+                pool = Pool(int(args.cpucount))
 
         if args.telluricmaskdepth == None:
                 print("defaulting to telluric mask depth of 1e-4")
@@ -574,6 +603,12 @@ if __name__ == "__main__":
                 print("defaulting to maximum bisector extrema of 2")
                 args.bisector = 2
 
+        path_intermed = os.path.join(str(args.intermedfiles), "npz")
+
+        # Create directory for npz output files
+        if not os.path.exists(path_intermed):
+                os.makedirs(path_intermed)
+
         filterpars = [int(args.minlinewidth), int(args.maxlinewidth), float(args.minlinedepth), float(args.maxcontdiff),\
                       float(args.mincontavg), float(args.masscenter), float(args.jerkdistance), int(args.bisector)]
                 
@@ -582,33 +617,60 @@ if __name__ == "__main__":
         
         if not args.noint:
 
-                waveref, refspectrum, avgerr = create_ref_spectrum(str(args.filedir), files[0], cropL, cropR, args.filetype)
-                # Save reference spectrum
+                # get reference file
+                waveref,flux,error,measurements = get_data(files[0], cropL, cropR, args.filetype)
+                
+                if args.buffer == None:
+                        
+                        print("normal integration")
+
+                        # initialize 3D array to store all spectra to handle nans properly      
+                        big3Darr = np.zeros((len(files), np.shape(waveref)[0], np.shape(waveref)[1]))
+
+                        # error estimate
+                        err = np.zeros(len(files))
+
+                        bigarr, err = zip(*tqdm(pool.imap(RefSpec((waveref, cropL, cropR, args.filetype)), files), desc="integrating files"))
+                        err = np.asarray(err)
+                        print(np.shape(bigarr))
+                        print(np.shape(err))
+                        
+                        # integrate 3D array
+                        refspectrum = np.nanmean(bigarr, axis=0)
+                        
+                        # get error estimate
+                        avgerr = np.mean(err[err<1])
+                        
+                elif (int(args.buffer) > 1) and (int(args.buffer) < len(files)):
+                      
+                        print("buffered integration")
+                      
+                        splitlist = np.linspace(0, len(files), 1+int(args.buffer))[1:-1].round().astype(int)
+                        filelist = np.split(files, splitlist)
+
+                        bigarr, err = zip(*tqdm(pool.imap(RefSpecBuf((waveref, cropL, cropR, args.filetype)), filelist), desc="integrating files"))
+
+                        refspectrum = np.sum(bigarr, axis=0)/len(files)
+
+                        avgerr = np.mean(err)
+                else:
+                        raise ValueError("buffer input invalid")
+
                 np.savez("refspectrum.npz", waveref, refspectrum, avgerr)
+
 
         waveref, csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance, bisectormax, templatemask, temperatures, boxlist =\
                  load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits','TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits',
                                    int(args.telluricmaskdepth), float(args.telluricmaskdev), args.templatemask, filterpars[2])
-
-        # Create directory for npz output files
-        if not os.path.exists('npz'):
-                os.makedirs('npz')
-
-        # Parallel process files with args
-        if args.cpucount == None:
-                print("using default Pool")
-                pool = Pool()
-        else:
-                pool = Pool(int(args.cpucount))
                         
-        pool.map(FileRV((csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance, bisectormax,\
-                                             templatemask, boxlist, filterpars, cropL, cropR, args.filetype)), files)
+        tqdm(pool.imap(FileRV((csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance, bisectormax,\
+                                             templatemask, boxlist, filterpars, cropL, cropR, args.filetype, path_intermed)), files), desc="processing files")
                               
         # flatten line minima array
         wavelines = np.concatenate(minima)
 
         # Open npz directory
-        files = list(pathlib.Path('npz').glob('*.npz'))
+        files = list(pathlib.Path(path_intermed).glob('*.npz'))
 
         avg_rverr_line = np.empty(shape=(len(files), len(wavelines)))
 
