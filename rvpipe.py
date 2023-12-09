@@ -376,7 +376,7 @@ class FileRV(object):
                 self.params = params
         def __call__(self, file):
                 csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance,\
-                        bisectormax, templatemask, boxlist, filterpars, cropL, cropR, filetype, path_intermed = self.params
+                        bisectormax, templatemask, boxlist, filterpars, cropL, cropR, filetype, path_intermed, filecompress = self.params
                 
                 wS, fS, eS, measurements = get_data(file, cropL, cropR, filetype)
 
@@ -502,8 +502,12 @@ class FileRV(object):
                         pixelindices = np.concatenate((pixelindices, pixelindices_ord))
                         linedepthline = np.concatenate((linedepthline, linedepth_ord))
 
-                np.savez(os.path.join(path_intermed, file.name[:-5]+"_rv"), rv, rverror, corrcoeff, linewidth, pixelindices,\
-                         linedepthline,[s_index, mn_linedepth*0.5, measurements[0], measurements[1], measurements[2]])
+                if filecompress:
+                        np.savez_compressed(os.path.join(path_intermed, file.name[:-5]+"_rv"), rv, rverror, corrcoeff, linewidth, pixelindices,\
+                                 linedepthline,[s_index, mn_linedepth*0.5, measurements[0], measurements[1], measurements[2]])
+                else:
+                        np.savez(os.path.join(path_intermed, file.name[:-5]+"_rv"), rv, rverror, corrcoeff, linewidth, pixelindices,\
+                                 linedepthline,[s_index, mn_linedepth*0.5, measurements[0], measurements[1], measurements[2]])                        
 
 if __name__ == "__main__":
 
@@ -514,7 +518,7 @@ if __name__ == "__main__":
 
         parser.add_argument('-imf', '--intermedfiles',
                             help="file directory for intermediate files")
-        
+
         parser.add_argument('-c', '--cpucount', help="specify number of cpus to use")
         parser.add_argument('-buf', '--buffer',
                     help="specify number of buffers for buffered integration")
@@ -548,8 +552,14 @@ if __name__ == "__main__":
         
         parser.add_argument('-tm', '--templatemask', action='store_false',
                             help="restrict lines to those in the line template")
-        parser.add_argument('-ni', '--noint', action='store_true',
+        parser.add_argument('-ni', '--noint', action='store_false',
                             help="disable automatic creation of reference spectrum if one already exists")
+        parser.add_argument('-np', '--noproc', action='store_false',
+                            help="disable file processing")
+        parser.add_argument('-fc', '--filecompress', action='store_false',
+                    help="compress intermediate files")
+        
+
 
         args = parser.parse_args()
 
@@ -615,7 +625,7 @@ if __name__ == "__main__":
         # directory for all files
         files = list(pathlib.Path(str(args.filedir)).rglob('*.fits'))
         
-        if not args.noint:
+        if args.noint:
 
                 # get reference file
                 waveref,flux,error,measurements = get_data(files[0], cropL, cropR, args.filetype)
@@ -658,120 +668,121 @@ if __name__ == "__main__":
 
                 np.savez("refspectrum.npz", waveref, refspectrum, avgerr)
 
+        if args.noproc:
 
-        waveref, csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance, bisectormax, templatemask, temperatures, boxlist =\
-                 load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits','TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits',
-                                   int(args.telluricmaskdepth), float(args.telluricmaskdev), args.templatemask, filterpars[2])
+                waveref, csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance, bisectormax, templatemask, temperatures, boxlist =\
+                         load_ref_spectrum("refspectrum.npz",'TAPAS_WMKO_NORAYLEIGH_SPEC.fits','TAPAS_WMKO_NORAYLEIGH_SPEC_WVL.fits',
+                                           int(args.telluricmaskdepth), float(args.telluricmaskdev), args.templatemask, filterpars[2])
 
-        list(tqdm(pool.imap(FileRV((csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance, bisectormax,\
-                                             templatemask, boxlist, filterpars, cropL, cropR, args.filetype, path_intermed)), files), desc="processing files"))
-                              
-        # flatten line minima array
-        wavelines = np.concatenate(minima)
+                list(tqdm(pool.imap(FileRV((csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance, bisectormax,\
+                        templatemask, boxlist, filterpars, cropL, cropR, args.filetype, path_intermed, args.filecompress)), files), desc="processing files"))
+                                      
+                # flatten line minima array
+                wavelines = np.concatenate(minima)
 
-        # Open npz directory
-        files = list(pathlib.Path(path_intermed).glob('*.npz'))
+                # Open npz directory
+                files = list(pathlib.Path(path_intermed).glob('*.npz'))
 
-        avg_rverr_line = np.empty(shape=(len(files), len(wavelines)))
+                avg_rverr_line = np.empty(shape=(len(files), len(wavelines)))
 
-        # Get average rv error per line
-        for i in range(len(files)):
-                arrays = np.load(files[i])
-                avg_rverr_line[i] = arrays["arr_1"]
-        avg_rverr_line = np.nanmean(avg_rverr_line, axis=0)
+                # Get average rv error per line
+                for i in range(len(files)):
+                        arrays = np.load(files[i])
+                        avg_rverr_line[i] = arrays["arr_1"]
+                avg_rverr_line = np.nanmean(avg_rverr_line, axis=0)
 
-        # Create mask for duplicates
-        dupmask = np.zeros(len(wavelines), dtype=bool)
-        for i in range(len(wavelines)):
-                
-                # Calculate difference between a line and the entire list to locate duplicates, within a 0.1 angstrom tolerance
-                zL = np.abs(wavelines - wavelines[i])
-                duplicates = np.where((zL < 0.1))[0]
-                if (len(duplicates) > 1):
-                        dupmask[duplicates[duplicates != duplicates[np.argmin(avg_rverr_line[duplicates])]]] = True
-        dupmask[np.where(avg_rverr_line == np.nan)] = True
+                # Create mask for duplicates
+                dupmask = np.zeros(len(wavelines), dtype=bool)
+                for i in range(len(wavelines)):
+                        
+                        # Calculate difference between a line and the entire list to locate duplicates, within a 0.1 angstrom tolerance
+                        zL = np.abs(wavelines - wavelines[i])
+                        duplicates = np.where((zL < 0.1))[0]
+                        if (len(duplicates) > 1):
+                                dupmask[duplicates[duplicates != duplicates[np.argmin(avg_rverr_line[duplicates])]]] = True
+                dupmask[np.where(avg_rverr_line == np.nan)] = True
 
-        # Flatten arrays, remove duplicates
-        wavelines = wavelines[~dupmask]
-        linedepth = np.concatenate(linedepth)[~dupmask]
-        contdiff = np.concatenate(contdiff)[~dupmask]
-        temperatures = np.concatenate(temperatures)[~dupmask]
-        contavg = np.concatenate(contavg)[~dupmask]
-        masscenter = np.concatenate(masscenter)[~dupmask]
-        jerkdistance = np.concatenate(jerkdistance)[~dupmask]
-        bisectormax = np.concatenate(bisectormax)[~dupmask]
+                # Flatten arrays, remove duplicates
+                wavelines = wavelines[~dupmask]
+                linedepth = np.concatenate(linedepth)[~dupmask]
+                contdiff = np.concatenate(contdiff)[~dupmask]
+                temperatures = np.concatenate(temperatures)[~dupmask]
+                contavg = np.concatenate(contavg)[~dupmask]
+                masscenter = np.concatenate(masscenter)[~dupmask]
+                jerkdistance = np.concatenate(jerkdistance)[~dupmask]
+                bisectormax = np.concatenate(bisectormax)[~dupmask]
 
-        # initialize other arrays
-        meansr,means,error,neidrv,time,angle,sindex,mndepth,numlines=np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),\
-                                                                      np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files))
+                # initialize other arrays
+                meansr,means,error,neidrv,time,angle,sindex,mndepth,numlines=np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),\
+                                                                              np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files)),np.zeros(len(files))
 
-        rvarrays,rverr_arrays,corr_arrays,width_arrays,ind_arrays,depth_arrays,line_search = np.empty(shape=(len(files), len(wavelines))),\
-                np.empty(shape=(len(files), len(wavelines))),np.empty(shape=(len(files), len(wavelines))),np.empty(shape=(len(files), len(wavelines))),\
-                np.empty(shape=(len(files), len(wavelines))),np.empty(shape=(len(files),len(wavelines))),np.empty(shape=(len(files),len(wavelines)))
+                rvarrays,rverr_arrays,corr_arrays,width_arrays,ind_arrays,depth_arrays,line_search = np.empty(shape=(len(files), len(wavelines))),\
+                        np.empty(shape=(len(files), len(wavelines))),np.empty(shape=(len(files), len(wavelines))),np.empty(shape=(len(files), len(wavelines))),\
+                        np.empty(shape=(len(files), len(wavelines))),np.empty(shape=(len(files),len(wavelines))),np.empty(shape=(len(files),len(wavelines)))
 
-        # Get high trend RVs in IR and neidrv, time, and solar altitude
-        for i in tqdm(range(len(files)), desc="pearson correlation"):
+                # Get high trend RVs in IR and neidrv, time, and solar altitude
+                for i in tqdm(range(len(files)), desc="pearson correlation"):
 
-                arrays = np.load(files[i])
+                        arrays = np.load(files[i])
 
-                rv = arrays["arr_0"][~dupmask]
-                rverr = arrays["arr_1"][~dupmask]
+                        rv = arrays["arr_0"][~dupmask]
+                        rverr = arrays["arr_1"][~dupmask]
 
-                if (args.filetype == "neid"):
+                        if (args.filetype == "neid"):
 
-                        rvred = rv[wavelines > 7000]
-                        rverr_red = rverr[wavelines > 7000]
+                                rvred = rv[wavelines > 7000]
+                                rverr_red = rverr[wavelines > 7000]
 
-                        cutr = np.where((rverr_red < 3*np.nanmean(rverr_red)) &
-                                (np.abs(rvred - np.nanmean(rvred)) < 3*np.nanstd(rvred)))
-                        meansr[i] = np.sum(rvred[cutr]/(rverr_red[cutr]**2))/np.sum(1/(rverr_red[cutr]**2))
+                                cutr = np.where((rverr_red < 3*np.nanmean(rverr_red)) &
+                                        (np.abs(rvred - np.nanmean(rvred)) < 3*np.nanstd(rvred)))
+                                meansr[i] = np.sum(rvred[cutr]/(rverr_red[cutr]**2))/np.sum(1/(rverr_red[cutr]**2))
 
-                line_search[i][(rverr < 3*np.nanmean(rverr)) & (np.abs(rv - np.nanmean(rv)) < 3*np.nanstd(rv))] = 1
-                
-                rvarrays[i] = rv
-                rverr_arrays[i] = rverr
+                        line_search[i][(rverr < 3*np.nanmean(rverr)) & (np.abs(rv - np.nanmean(rv)) < 3*np.nanstd(rv))] = 1
+                        
+                        rvarrays[i] = rv
+                        rverr_arrays[i] = rverr
 
-                corr_arrays[i] = arrays["arr_2"][~dupmask]
-                width_arrays[i] = arrays["arr_3"][~dupmask]
-                ind_arrays[i] = arrays["arr_4"][~dupmask]
-                depth_arrays[i] = arrays["arr_5"][~dupmask]
-                measures = arrays["arr_6"]
-                sindex[i],mndepth[i],neidrv[i],time[i],angle[i] = measures
+                        corr_arrays[i] = arrays["arr_2"][~dupmask]
+                        width_arrays[i] = arrays["arr_3"][~dupmask]
+                        ind_arrays[i] = arrays["arr_4"][~dupmask]
+                        depth_arrays[i] = arrays["arr_5"][~dupmask]
+                        measures = arrays["arr_6"]
+                        sindex[i],mndepth[i],neidrv[i],time[i],angle[i] = measures
 
-        # Calculate corr coeff for each line with respect to high trend lines for filtering
-        pearsoncorr, perline = np.zeros(len(rvarrays.T)),np.zeros(len(rvarrays.T))
+                # Calculate corr coeff for each line with respect to high trend lines for filtering
+                pearsoncorr, perline = np.zeros(len(rvarrays.T)),np.zeros(len(rvarrays.T))
 
-        for i in range(len(rvarrays.T)):
-                
-                line = rvarrays.T[i]
-                filelist = line_search[:,i]
-                perline[i] = len(filelist[filelist == 1])/len(filelist)
-                
-                if (args.filetype == "neid"):
-                        try:
-                                pearsoncorr[i] = pearsonr(meansr[~np.isnan(line)], line[~np.isnan(line)])[0]
-                        except:
-                                pearsoncorr[i] = np.nan
+                for i in range(len(rvarrays.T)):
+                        
+                        line = rvarrays.T[i]
+                        filelist = line_search[:,i]
+                        perline[i] = len(filelist[filelist == 1])/len(filelist)
+                        
+                        if (args.filetype == "neid"):
+                                try:
+                                        pearsoncorr[i] = pearsonr(meansr[~np.isnan(line)], line[~np.isnan(line)])[0]
+                                except:
+                                        pearsoncorr[i] = np.nan
 
-        # Calculate bulk rv
-        for i in range(len(files)):
-                
-                rv = rvarrays[i]
-                rverr = rverr_arrays[i]
-                
-                if (args.filetype == "neid"):
-                        cut = np.where((rverr < 3*np.nanmean(rverr)) &
-                        (np.abs(rv - np.nanmean(rv)) < 3*np.nanstd(rv))& (np.abs(pearsoncorr) < 0.5) & (perline > 0.01))
-                elif ((args.filetype == "harpn") or (args.filetype == "adp")):
-                        cut = np.where((rverr < 3*np.nanmean(rverr)) &
-                        (np.abs(rv - np.nanmean(rv)) < 3*np.nanstd(rv))& (perline > 0.01))                        
+                # Calculate bulk rv
+                for i in range(len(files)):
+                        
+                        rv = rvarrays[i]
+                        rverr = rverr_arrays[i]
+                        
+                        if (args.filetype == "neid"):
+                                cut = np.where((rverr < 3*np.nanmean(rverr)) &
+                                (np.abs(rv - np.nanmean(rv)) < 3*np.nanstd(rv))& (np.abs(pearsoncorr) < 0.5) & (perline > 0.01))
+                        elif ((args.filetype == "harpn") or (args.filetype == "adp")):
+                                cut = np.where((rverr < 3*np.nanmean(rverr)) &
+                                (np.abs(rv - np.nanmean(rv)) < 3*np.nanstd(rv))& (perline > 0.01))                        
 
-                numlines[i] = len(rv[cut])
+                        numlines[i] = len(rv[cut])
 
-                means[i] = np.sum(rv[cut]/(rverr[cut]**2))/np.sum(1/(rverr[cut]**2))
-                error[i] = np.mean(rverr[cut])/np.sqrt(len(rv[cut]))
+                        means[i] = np.sum(rv[cut]/(rverr[cut]**2))/np.sum(1/(rverr[cut]**2))
+                        error[i] = np.mean(rverr[cut])/np.sqrt(len(rv[cut]))
 
-        # Output rvs and calculated parameters
-        np.savez("all_lines", rvarrays, rverr_arrays, corr_arrays, width_arrays, ind_arrays, depth_arrays)
-        np.savez("filter_pars", wavelines, temperatures, contdiff, contavg, masscenter, jerkdistance, bisectormax, linedepth,pearsoncorr, perline)
-        np.savez("output_file", means, error, neidrv, time, angle, sindex, mndepth,numlines, args)
+                # Output rvs and calculated parameters
+                np.savez("all_lines", rvarrays, rverr_arrays, corr_arrays, width_arrays, ind_arrays, depth_arrays)
+                np.savez("filter_pars", wavelines, temperatures, contdiff, contavg, masscenter, jerkdistance, bisectormax, linedepth,pearsoncorr, perline)
+                np.savez("output_file", means, error, neidrv, time, angle, sindex, mndepth,numlines, args)
