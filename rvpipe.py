@@ -577,7 +577,7 @@ if __name__ == "__main__":
                             help="disable file processing")
         parser.add_argument('-nb', '--nobulk', action='store_false',
                             help="disable processing of intermediate files")
-        parser.add_argument('-fc', '--filecompress', action='store_false',
+        parser.add_argument('-fc', '--filecompress', action='store_true',
                     help="compress intermediate files")
 
         args = parser.parse_args()
@@ -704,10 +704,10 @@ if __name__ == "__main__":
 
         if args.noproc:
 
-                files = np.asarray(files)[np.isin(files, good_files)]
+                #files = np.asarray(files)[np.isin(files, good_files)]
 
                 list(tqdm(pool.imap(FileRV((csplines, minima, maxima, linedepth, contdiff, contavg, masscenter, jerkdistance, bisectormax,\
-                        templatemask, boxlist, filterpars, cropL, cropR, args.filetype, path_intermed, args.filecompress)), files), desc="processing files"))
+                        templatemask, boxlist, filterpars, cropL, cropR, args.filetype, path_intermed, args.filecompress)), good_files), desc="processing files"))
                 
         if args.nobulk:
                               
